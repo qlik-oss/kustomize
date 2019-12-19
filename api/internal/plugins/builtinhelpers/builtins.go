@@ -5,6 +5,7 @@ package builtinhelpers
 
 import (
 	"sigs.k8s.io/kustomize/api/builtins"
+	"sigs.k8s.io/kustomize/api/builtins_qlik"
 	"sigs.k8s.io/kustomize/api/resmap"
 )
 
@@ -27,12 +28,27 @@ const (
 	PrefixSuffixTransformer
 	ReplicaCountTransformer
 	SecretGenerator
+
+	SuperVars
+	SuperConfigMap
+	SuperSecret
 )
 
 var stringToBuiltinPluginTypeMap map[string]BuiltinPluginType
 
 func init() {
 	stringToBuiltinPluginTypeMap = makeStringToBuiltinPluginTypeMap()
+
+	TransformerFactories[SuperVars] = builtins_qlik.NewSuperVarsPlugin
+	stringToBuiltinPluginTypeMap["SuperVars"] = SuperVars
+
+	TransformerFactories[SuperConfigMap] = builtins_qlik.NewSuperConfigMapTransformerPlugin
+	GeneratorFactories[SuperConfigMap] = builtins_qlik.NewSuperConfigMapGeneratorPlugin
+	stringToBuiltinPluginTypeMap["SuperConfigMap"] = SuperConfigMap
+
+	TransformerFactories[SuperSecret] = builtins_qlik.NewSuperSecretTransformerPlugin
+	GeneratorFactories[SuperSecret] = builtins_qlik.NewSuperSecretGeneratorPlugin
+	stringToBuiltinPluginTypeMap["SuperSecret"] = SuperSecret
 }
 
 func makeStringToBuiltinPluginTypeMap() (result map[string]BuiltinPluginType) {
