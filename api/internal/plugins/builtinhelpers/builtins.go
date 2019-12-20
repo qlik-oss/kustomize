@@ -40,6 +40,7 @@ const (
 	SuperVars
 	SuperConfigMap
 	SuperSecret
+	ValuesFile
 )
 
 var stringToBuiltinPluginTypeMap map[string]BuiltinPluginType
@@ -81,6 +82,9 @@ func init() {
 	TransformerFactories[SuperSecret] = builtins_qlik.NewSuperSecretTransformerPlugin
 	GeneratorFactories[SuperSecret] = builtins_qlik.NewSuperSecretGeneratorPlugin
 	stringToBuiltinPluginTypeMap["SuperSecret"] = SuperSecret
+
+	TransformerFactories[ValuesFile] = builtins_qlik.NewValuesFilePlugin
+	stringToBuiltinPluginTypeMap["ValuesFile"] = ValuesFile
 }
 
 func makeStringToBuiltinPluginTypeMap() (result map[string]BuiltinPluginType) {
