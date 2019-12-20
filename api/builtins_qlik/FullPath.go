@@ -5,6 +5,7 @@ import (
 	"log"
 	"path/filepath"
 
+	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/transform"
 	"sigs.k8s.io/kustomize/api/types"
@@ -55,5 +56,5 @@ func (p *FullPathPlugin) computePath(in interface{}) (interface{}, error) {
 }
 
 func NewFullPathPlugin() resmap.TransformerPlugin {
-	return &FullPathPlugin{logger: getLogger("FullPathPlugin")}
+	return &FullPathPlugin{logger: utils.GetLogger("FullPathPlugin")}
 }

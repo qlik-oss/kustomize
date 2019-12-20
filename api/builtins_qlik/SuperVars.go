@@ -2,6 +2,7 @@ package builtins_qlik
 
 import (
 	"log"
+	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 
 	"sigs.k8s.io/kustomize/api/internal/accumulator"
 	"sigs.k8s.io/kustomize/api/internal/plugins/builtinconfig"
@@ -52,5 +53,5 @@ func (p *SuperVarsPlugin) Transform(m resmap.ResMap) error {
 }
 
 func NewSuperVarsPlugin() resmap.TransformerPlugin {
-	return &SuperVarsPlugin{logger: getLogger("SuperVarsPlugin")}
+	return &SuperVarsPlugin{logger: utils.GetLogger("SuperVarsPlugin")}
 }

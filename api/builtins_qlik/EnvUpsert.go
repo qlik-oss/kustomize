@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/transform"
 	"sigs.k8s.io/kustomize/api/types"
@@ -126,5 +127,5 @@ func (p *EnvUpsertPlugin) setEnvVar(setEnvVar map[string]interface{}, fromEnvVar
 }
 
 func NewEnvUpsertPlugin() resmap.TransformerPlugin {
-	return &EnvUpsertPlugin{logger: getLogger("EnvUpsertPlugin")}
+	return &EnvUpsertPlugin{logger: utils.GetLogger("EnvUpsertPlugin")}
 }

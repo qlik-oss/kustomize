@@ -3,6 +3,7 @@ package builtins_qlik
 import (
 	"fmt"
 	"log"
+	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 
 	"sigs.k8s.io/kustomize/api/builtins"
 	"sigs.k8s.io/kustomize/api/resmap"
@@ -68,9 +69,9 @@ func (p *SuperConfigMapPlugin) GetDisableNameSuffixHash() bool {
 }
 
 func NewSuperConfigMapTransformerPlugin() resmap.TransformerPlugin {
-	return &SuperConfigMapPlugin{logger: getLogger("SuperConfigMapTransformerPlugin")}
+	return &SuperConfigMapPlugin{logger: utils.GetLogger("SuperConfigMapTransformerPlugin")}
 }
 
 func NewSuperConfigMapGeneratorPlugin() resmap.GeneratorPlugin {
-	return &SuperConfigMapPlugin{logger: getLogger("SuperConfigMapGeneratorPlugin")}
+	return &SuperConfigMapPlugin{logger: utils.GetLogger("SuperConfigMapGeneratorPlugin")}
 }

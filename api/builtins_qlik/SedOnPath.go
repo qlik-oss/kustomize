@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/transform"
@@ -86,5 +87,5 @@ func (p *SedOnPathPlugin) executeSed(zString string) (string, error) {
 }
 
 func NewSedOnPathPlugin() resmap.TransformerPlugin {
-	return &SedOnPathPlugin{logger: getLogger("SedOnPathPlugin")}
+	return &SedOnPathPlugin{logger: utils.GetLogger("SedOnPathPlugin")}
 }

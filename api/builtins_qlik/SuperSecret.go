@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 
 	"sigs.k8s.io/kustomize/api/builtins"
 	"sigs.k8s.io/kustomize/api/resmap"
@@ -93,9 +94,9 @@ func (p *SuperSecretPlugin) GetDisableNameSuffixHash() bool {
 }
 
 func NewSuperSecretTransformerPlugin() resmap.TransformerPlugin {
-	return &SuperSecretPlugin{logger: getLogger("SuperSecretTransformerPlugin")}
+	return &SuperSecretPlugin{logger: utils.GetLogger("SuperSecretTransformerPlugin")}
 }
 
 func NewSuperSecretGeneratorPlugin() resmap.GeneratorPlugin {
-	return &SuperSecretPlugin{logger: getLogger("SuperSecretGeneratorPlugin")}
+	return &SuperSecretPlugin{logger: utils.GetLogger("SuperSecretGeneratorPlugin")}
 }

@@ -1,4 +1,4 @@
-package builtins_qlik
+package utils
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ func (nw *nullWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func getLogger(pluginName string) *log.Logger {
+func GetLogger(pluginName string) *log.Logger {
 	var logWriter io.Writer
 	if os.Getenv("QKP_LOG_ENABLED") == "true" {
 		tmpFile, err := ioutil.TempFile(os.Getenv("QKP_LOG_DIR"), fmt.Sprintf("%v-*.log", pluginName))
