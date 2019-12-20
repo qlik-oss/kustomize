@@ -36,6 +36,7 @@ const (
 	HelmChart
 	HelmValues
 	SedOnPath
+	SelectivePatch
 	SuperVars
 	SuperConfigMap
 	SuperSecret
@@ -66,6 +67,9 @@ func init() {
 
 	TransformerFactories[SedOnPath] = builtins_qlik.NewSedOnPathPlugin
 	stringToBuiltinPluginTypeMap["SedOnPath"] = SedOnPath
+
+	TransformerFactories[SelectivePatch] = builtins_qlik.NewSelectivePatchPlugin
+	stringToBuiltinPluginTypeMap["SelectivePatch"] = SelectivePatch
 
 	TransformerFactories[SuperVars] = builtins_qlik.NewSuperVarsPlugin
 	stringToBuiltinPluginTypeMap["SuperVars"] = SuperVars
