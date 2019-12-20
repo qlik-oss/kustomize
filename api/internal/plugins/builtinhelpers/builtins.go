@@ -29,6 +29,9 @@ const (
 	ReplicaCountTransformer
 	SecretGenerator
 
+	EnvUpsert
+	FullPath
+	SedOnPath
 	SuperVars
 	SuperConfigMap
 	SuperSecret
@@ -38,6 +41,15 @@ var stringToBuiltinPluginTypeMap map[string]BuiltinPluginType
 
 func init() {
 	stringToBuiltinPluginTypeMap = makeStringToBuiltinPluginTypeMap()
+
+	TransformerFactories[EnvUpsert] = builtins_qlik.NewEnvUpsertPlugin
+	stringToBuiltinPluginTypeMap["EnvUpsert"] = EnvUpsert
+
+	TransformerFactories[FullPath] = builtins_qlik.NewFullPathPlugin
+	stringToBuiltinPluginTypeMap["FullPath"] = FullPath
+
+	TransformerFactories[SedOnPath] = builtins_qlik.NewSedOnPathPlugin
+	stringToBuiltinPluginTypeMap["SedOnPath"] = SedOnPath
 
 	TransformerFactories[SuperVars] = builtins_qlik.NewSuperVarsPlugin
 	stringToBuiltinPluginTypeMap["SuperVars"] = SuperVars
