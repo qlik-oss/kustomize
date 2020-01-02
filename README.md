@@ -1,75 +1,17 @@
-# kustomize
+# Qlik kustomize fork
 
-`kustomize` lets you customize raw, template-free YAML
-files for multiple purposes, leaving the original YAML
-untouched and usable as is.
+From: https://github.com/kubernetes-sigs/kustomize
 
-`kustomize` targets kubernetes; it understands and can
-patch [kubernetes style] API objects.  It's like
-[`make`], in that what it does is declared in a file,
-and it's like [`sed`], in that it emits edited text.
+Contains Qlik plugins as part of the executable
 
-This tool is sponsored by [sig-cli] ([KEP]), and
-inspired by [DAM].
-
-
-[![Build Status](https://travis-ci.org/kubernetes-sigs/kustomize.svg?branch=master)](https://travis-ci.org/kubernetes-sigs/kustomize)
-[![Go Report Card](https://goreportcard.com/badge/github.com/kubernetes-sigs/kustomize)](https://goreportcard.com/report/github.com/kubernetes-sigs/kustomize)
-
-Download a binary from the [release page], or see
-these [instructions](docs/INSTALL.md).
-
-Browse the [docs](docs) or jump right into the
-tested [examples](examples).
-
-## kubectl integration
-
-Since [v1.14][kubectl announcement] the kustomize build system has been included in kubectl.
-
-| kubectl version | kustomize version |
-|---------|--------|
-| v1.16.0 | [v2.0.3](/../../tree/v2.0.3) |
-| v1.15.x | [v2.0.3](/../../tree/v2.0.3) |
-| v1.14.x | [v2.0.3](/../../tree/v2.0.3) |
-
-For examples and guides for using the kubectl integration please see the [kubectl book] or the [kubernetes documentation].
-
-## Usage
-
-
-### 1) Make a [kustomization] file
-
-In some directory containing your YAML [resource]
-files (deployments, services, configmaps, etc.), create a
-[kustomization] file.
-
-This file should declare those resources, and any
-customization to apply to them, e.g. _add a common
-label_.
-
-![base image][imageBase]
-
-File structure:
-
-> ```
-> ~/someApp
-> ├── deployment.yaml
-> ├── kustomization.yaml
-> └── service.yaml
-> ```
-
-The resources in this directory could be a fork of
-someone else's configuration.  If so, you can easily
-rebase from the source material to capture
-improvements, because you don't modify the resources
-directly.
-
-Generate customized YAML with:
-
-```
-kustomize build ~/someApp
+## Building
+```bash
+git clone git@github.com:qlik-oss/kustomize.git kustomize_fork
+cd kustomize_fork/kustomize
+go install .
 ```
 
+<<<<<<< HEAD
 The YAML can be directly [applied] to a cluster:
 
 > ```
@@ -184,3 +126,9 @@ is governed by the [Kubernetes Code of Conduct].
 [v2.0.3]: /../../releases/tag/v2.0.3
 [v2.1.0]: /../../releases/tag/v2.1.0
 [workflows]: docs/workflows.md
+=======
+## Usage
+```bash
+$HOME/go/bin/kustomize build . --load_restrictor=none
+```
+>>>>>>> Updating Readme
