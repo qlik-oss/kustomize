@@ -23,10 +23,6 @@ jobs:
           name: "Publish Release on GitHub"
           command: |
             go get github.com/tcnksm/ghr
-            echo "--AB: CIRCLE_PROJECT_USERNAME: ${CIRCLE_PROJECT_USERNAME}"
-            echo "--AB: CIRCLE_PROJECT_REPONAME: ${CIRCLE_PROJECT_REPONAME}"
-            echo "--AB: CIRCLE_SHA1: ${CIRCLE_SHA1}"
-            echo "--AB: CIRCLE_TAG: ${CIRCLE_TAG}"
             ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete -prerelease ${CIRCLE_TAG} /go/src/github.com/qlik-oss/kustomize/bin
 workflows:
   version: 2
@@ -35,12 +31,12 @@ workflows:
       - build:
           filters:
             tags:
-              ignore: /v.*/
+              ignore: /^qlik\/v.*/
   build_release:
     jobs:
       - build_release:
           filters:
             tags:
-              only: /v.*/
+              only: /^qlik\/v.*/
             branches:
               ignore: /.*/
