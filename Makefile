@@ -248,3 +248,6 @@ clean: kustomize-external-go-plugin-clean
 .PHONY: nuke
 nuke: clean
 	sudo rm -rf $(shell go env GOPATH)/pkg/mod/sigs.k8s.io
+
+qlik-build-all:
+	./qlik-build-all.sh
