@@ -316,3 +316,6 @@ clean: kustomize-external-go-plugin-clean
 .PHONY: nuke
 nuke: clean
 	go clean --modcache
+
+qlik-build-all:
+	./qlik-build-all.sh
