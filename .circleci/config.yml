@@ -35,10 +35,10 @@ workflows:
       - build:
           filters:
             tags:
-              ignore: /^v.*/
+              ignore: /v.*/
   build_release:
     jobs:
       - build_release:
           filters:
             tags:
-              only: /^v.*/
+              only: /v.*/
