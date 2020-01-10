@@ -1,4 +1,4 @@
-package main
+package builtins_qlik
 
 import (
 	"fmt"
@@ -10,7 +10,8 @@ import (
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/resource"
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
-	"sigs.k8s.io/kustomize/plugin/builtins_qlik/utils/loadertest"
+	"sigs.k8s.io/kustomize/api/builtins_qlik/utils/loadertest"
+	"sigs.k8s.io/kustomize/api/internal/k8sdeps/transformer"
 )
 
 func TestBasicSed(t *testing.T) {
@@ -148,19 +149,20 @@ regex:
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			resourceFactory := resmap.NewFactory(resource.NewFactory(
-				kunstruct.NewKunstructuredFactoryImpl()), nil)
+				kunstruct.NewKunstructuredFactoryImpl()), transformer.NewFactoryImpl())
 
 			resMap, err := resourceFactory.NewResMapFromBytes([]byte(testCase.pluginInputResources))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
 			}
 
-			err = KustomizePlugin.Config(resmap.NewPluginHelpers(loadertest.NewFakeLoader("/"), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
+			plugin := NewSedOnPathPlugin()
+			err = plugin.Config(resmap.NewPluginHelpers(loadertest.NewFakeLoader("/"), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
 			}
 
-			err = KustomizePlugin.Transform(resMap)
+			err = plugin.Transform(resMap)
 			if err != nil && testCase.expectingTransformError {
 				return
 			}
