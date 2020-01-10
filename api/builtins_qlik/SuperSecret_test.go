@@ -15,8 +15,6 @@ import (
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
 )
 
-var kustomizeSuperSecretPlugin SuperSecretPlugin
-
 func TestSuperSecret_simpleTransformer(t *testing.T) {
 	pluginInputResources := `
 apiVersion: v1
@@ -457,7 +455,21 @@ prefix: some-service-
 							assert.NoError(t, err)
 							assert.True(t, match)
 
-							generateResMap, err := kustomizeSuperSecretPlugin.Generate()
+							resourceFactory := resmap.NewFactory(resource.NewFactory(
+								kunstruct.NewKunstructuredFactoryImpl()), nil)
+
+							plugin := NewSuperSecretGeneratorPlugin()
+
+							err = plugin.Config(resmap.NewPluginHelpers(loadertest.NewFakeLoader("/"), valtest_test.MakeFakeValidator(), resourceFactory), []byte(`
+apiVersion: qlik.com/v1
+kind: SuperSecret
+metadata:
+ name: mySecret
+assumeTargetWillExist: true
+prefix: some-service-
+`))
+
+							generateResMap, err := plugin.Generate()
 							assert.NoError(t, err)
 
 							tempRes := generateResMap.GetByIndex(0)
@@ -465,7 +477,8 @@ prefix: some-service-
 							assert.True(t, tempRes.NeedHashSuffix())
 
 							tempRes.SetName(fmt.Sprintf("some-service-%s", tempRes.GetName()))
-							hash, err := kustomizeSuperSecretPlugin.Hasher.Hash(tempRes)
+
+							hash, err := kunstruct.NewKunstructuredFactoryImpl().Hasher().Hash(tempRes)
 							assert.NoError(t, err)
 							assert.Equal(t, fmt.Sprintf("%s-%s", tempRes.GetName(), hash), refName)
 

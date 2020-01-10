@@ -14,8 +14,6 @@ import (
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
 )
 
-var kustomizeSuperConfigMapPlugin SuperConfigMapPlugin
-
 func TestSuperConfigMap_simpleTransformer(t *testing.T) {
 	pluginInputResources := `
 apiVersion: v1
@@ -460,15 +458,12 @@ prefix: some-service-
 							tempRes := generateResMap.GetByIndex(0)
 							assert.NotNil(t, tempRes)
 							assert.True(t, tempRes.NeedHashSuffix())
-							
-							tempRes.SetName(fmt.Sprintf("some-service-%s", tempRes.GetName()))
-							
-						
 
-							//hasher := NewBase(resourceFactory, kustomizeSuperConfigMapPlugin)
-							// hash, err := hasher.Hasher.Hash(tempRes)
-							// assert.NoError(t, err)
-							// assert.Equal(t, fmt.Sprintf("%s-%s", tempRes.GetName(), hash), refName)
+							tempRes.SetName(fmt.Sprintf("some-service-%s", tempRes.GetName()))
+
+							hash, err := kunstruct.NewKunstructuredFactoryImpl().Hasher().Hash(tempRes)
+							assert.NoError(t, err)
+							assert.Equal(t, fmt.Sprintf("%s-%s", tempRes.GetName(), hash), refName)
 
 							break
 						}

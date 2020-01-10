@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"sigs.k8s.io/kustomize/api/builtins_qlik/utils/loadertest"
+	"sigs.k8s.io/kustomize/api/internal/k8sdeps/transformer"
 	"sigs.k8s.io/kustomize/api/k8sdeps/kunstruct"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/resource"
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
-	"sigs.k8s.io/kustomize/api/builtins_qlik/utils/loadertest"
-	"sigs.k8s.io/kustomize/api/internal/k8sdeps/transformer"
 )
 
 func TestBasicSed(t *testing.T) {
@@ -20,7 +20,8 @@ func TestBasicSed(t *testing.T) {
 	}
 	result, err := p.executeSed("hello there!")
 	assert.NoError(t, err)
-	assert.Equal(t, "goodbye there!", result)
+	//must compare with \n cause sed automatically adds
+	assert.Equal(t, "goodbye there!\n", result)
 }
 
 func TestSedOnPath(t *testing.T) {
@@ -125,7 +126,7 @@ regex:
 					args := container.(map[string]interface{})["command"].([]interface{})
 					for _, arg := range args {
 						zArg := arg.(string)
-						if zArg == "--port=1234" {
+						if strings.TrimSpace(zArg) == "--port=1234" {
 							portArgSubCounter++
 						}
 					}
@@ -137,7 +138,7 @@ regex:
 					args := container.(map[string]interface{})["command"].([]interface{})
 					for _, arg := range args {
 						zArg := arg.(string)
-						if zArg == "--TempContentServiceUrl=http://$(PREFIX)-contents:6080" {
+						if strings.TrimSpace(zArg) == "--TempContentServiceUrl=http://$(PREFIX)-contents:6080" {
 							tempContentServiceUrlSubCounter++
 						}
 					}
