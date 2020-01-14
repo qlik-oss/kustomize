@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func TestHelmValues(t *testing.T) {
+func TestSelectivePatch(t *testing.T) {
 
 	testCases := []struct {
 		name                 string
@@ -24,46 +24,40 @@ func TestHelmValues(t *testing.T) {
 		checkAssertions      func(*testing.T, resmap.ResMap, string)
 	}{
 		{
-			name: "HelmValues success",
+			name: "SelectivePatch success",
 			pluginConfig: `
 apiVersion: qlik.com/v1
-kind: HelmValues
+kind: SelectivePatch
 metadata:
   name: qliksense
-chartName: qliksense
-releaseName: qliksense
-values:
-  config:
-    accessControl:
-      testing: 1234
-  qix-sessions:
-    testing: true
+enabled: true
+patches:
+- target:
+    kind: Deployment
+    labelSelector: '!app'
+  patch: |-
+    apiVersion: qlik.com/v1
+    kind: Deployment
+    metadata:
+      name: qliksense
+    data:
+      common: testing1234
 `,
 			pluginInputResources: `
-apiVersion: apps/v1
-kind: HelmChart
+apiVersion: qlik.com/v1
+kind: Deployment
 metadata:
   name: qliksense
-chartName: qliksense
-releaseName: qliksense
-values:
-  config:
-    accessControl:
-      testing: 4321
+data:
+  common: test
 `,
 			expectedResult: `
-apiVersion: apps/v1
-chartName: qliksense
-kind: HelmChart
+apiVersion: qlik.com/v1
+kind: Deployment
 metadata:
   name: qliksense
-releaseName: qliksense
-values:
-  config:
-    accessControl:
-      testing: 4321
-  qix-sessions:
-    testing: true
+data:
+  common: testing1234
 `,
 
 			checkAssertions: func(t *testing.T, resMap resmap.ResMap, expectedResult string) {
@@ -88,7 +82,7 @@ values:
 				t.Fatalf("Err: %v", err)
 			}
 
-			plugin := NewHelmValuesPlugin()
+			plugin := NewSelectivePatchPlugin()
 			err = plugin.Config(resmap.NewPluginHelpers(loadertest.NewFakeLoader("/"), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
 			if err != nil {
 				t.Fatalf("Err: %v", err)

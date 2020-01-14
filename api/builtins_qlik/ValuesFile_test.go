@@ -14,67 +14,70 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func TestHelmValues(t *testing.T) {
+func TestValuesFile(t *testing.T) {
+	valuesFileContent := `
+  config:
+    accessControl:
+      testing: 1234
+    qix-sessions:
+      testing: true
+    test123:
+      working: 123
+`
 
-	testCases := []struct {
+	var testCases = []struct {
 		name                 string
 		pluginConfig         string
 		pluginInputResources string
+		valuesFileContent    string
 		expectedResult       string
 		checkAssertions      func(*testing.T, resmap.ResMap, string)
 	}{
 		{
-			name: "HelmValues success",
+			name: "ValuesFile success",
 			pluginConfig: `
 apiVersion: qlik.com/v1
-kind: HelmValues
+kind: ValuesFile
 metadata:
   name: qliksense
-chartName: qliksense
-releaseName: qliksense
+enabled: true
+valuesFile: values.tml.yaml
+dataSource: 
+  ejson:
+    filePath: test.json
+`,
+			valuesFileContent: valuesFileContent,
+			pluginInputResources: `
+apiVersion: apps/v1
+kind: HelmValues
+metadata:
+  name: collections
+values:
+  config:
+    qix-sessions:
+      testing: false
+`,
+			expectedResult: `
+apiVersion: apps/v1
+kind: HelmValues
+metadata:
+  name: collections
 values:
   config:
     accessControl:
       testing: 1234
-  qix-sessions:
-    testing: true
+    qix-sessions:
+      testing: true
+    test123:
+      working: 123
 `,
-			pluginInputResources: `
-apiVersion: apps/v1
-kind: HelmChart
-metadata:
-  name: qliksense
-chartName: qliksense
-releaseName: qliksense
-values:
-  config:
-    accessControl:
-      testing: 4321
-`,
-			expectedResult: `
-apiVersion: apps/v1
-chartName: qliksense
-kind: HelmChart
-metadata:
-  name: qliksense
-releaseName: qliksense
-values:
-  config:
-    accessControl:
-      testing: 4321
-  qix-sessions:
-    testing: true
-`,
-
 			checkAssertions: func(t *testing.T, resMap resmap.ResMap, expectedResult string) {
 				result, err := resMap.AsYaml()
 				assert.NoError(t, err)
 
 				expected, err := yaml.JSONToYAML([]byte(expectedResult))
 				assert.NoError(t, err)
-
 				assert.Equal(t, expected, result)
-
 			},
 		},
 	}
@@ -88,8 +91,16 @@ values:
 				t.Fatalf("Err: %v", err)
 			}
 
-			plugin := NewHelmValuesPlugin()
-			err = plugin.Config(resmap.NewPluginHelpers(loadertest.NewFakeLoader("/"), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
+			ldr := loadertest.NewFakeLoader("/")
+			if len(testCase.valuesFileContent) > 0 {
+				err = ldr.AddFile("/values.tml.yaml", []byte(testCase.valuesFileContent))
+				if err != nil {
+					t.Fatalf("Err: %v", err)
+				}
+			}
+
+			plugin := NewValuesFilePlugin()
+			err = plugin.Config(resmap.NewPluginHelpers(ldr, valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
 			}
@@ -103,7 +114,9 @@ values:
 				fmt.Printf("--res: %v\n", res.String())
 			}
 
-			testCase.checkAssertions(t, resMap, testCase.expectedResult)
+			if err == nil {
+				testCase.checkAssertions(t, resMap, testCase.expectedResult)
+			}
 		})
 	}
 }
