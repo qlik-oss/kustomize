@@ -2,6 +2,7 @@ package builtins_qlik
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -9,11 +10,22 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/gofrs/flock"
+	"github.com/pkg/errors"
 
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/ifc"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/yaml"
+
+
+	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v3/pkg/repo"
+
 )
 
 type HelmChartPlugin struct {
@@ -36,6 +48,12 @@ type HelmChartPlugin struct {
 	rf               *resmap.Factory
 	logger           *log.Logger
 }
+
+
+var (
+	settings *cli.EnvSettings
+	helmDir  = filepath.Join("helm", "repository")
+)
 
 func (p *HelmChartPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
 	p.ldr = h.Loader()
@@ -92,12 +110,13 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 	}
 
 	err = p.initHelm()
+	settings = cli.New()
 	if err != nil {
 		p.logger.Printf("error executing initHelm(), error: %v\n", err)
 		return nil, err
 	}
 	if _, err := os.Stat(p.ChartHome); os.IsNotExist(err) {
-		err = p.fetchHelm()
+		err = p.helmFetch()
 		if err != nil {
 			p.logger.Printf("error executing fetchHelm(), error: %v\n", err)
 			return nil, err
@@ -106,7 +125,7 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 		p.logger.Printf("error executing stat on file: %v, error: %v\n", p.ChartHome, err)
 	}
 
-	err = p.deleteRequirements(p.ChartHome)
+	err = p.deleteRequirements()
 	if err != nil {
 		p.logger.Printf("error executing deleteRequirements() for dir: %v, error: %v\n", p.ChartHome, err)
 		return nil, err
@@ -129,11 +148,11 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 	return p.rf.NewResMapFromBytes(templatedYaml)
 }
 
-func (p *HelmChartPlugin) deleteRequirements(dir string) error {
-
-	d, err := os.Open(dir)
+func (p *HelmChartPlugin) deleteRequirements() error {
+	repoFile := settings.RepositoryCache
+	d, err := os.Open(repoFile)
 	if err != nil {
-		p.logger.Printf("error opening directory %v, error: %v\n", dir, err)
+		p.logger.Printf("error opening directory %v, error: %v\n", repoFile, err)
 		return err
 	}
 	defer d.Close()
@@ -149,7 +168,8 @@ func (p *HelmChartPlugin) deleteRequirements(dir string) error {
 			ext := filepath.Ext(file.Name())
 			name := file.Name()[0 : len(file.Name())-len(ext)]
 			if name == "requirements" {
-				filePath := dir + "/" + file.Name()
+				fmt.Println("here")
+				filePath := repoFile + "/" + file.Name()
 				err := os.Remove(filePath)
 				if err != nil {
 					p.logger.Printf("error deleting the requirements file %v, error: %v\n", filePath, err)
@@ -174,45 +194,67 @@ func (p *HelmChartPlugin) initHelm() error {
 	return nil
 }
 
-func (p *HelmChartPlugin) fetchHelm() error {
+// RepoAdd adds repo with given name and url
+func  (p *HelmChartPlugin) helmFetch() error {
+	var (
+		repoFile    = settings.RepositoryConfig
+		fileLock    *flock.Flock
+		lockContext context.Context
+		cancel      context.CancelFunc
+		locked      bool
+		err         error
+		b           []byte
+		f           repo.File
+		r           *repo.ChartRepository
+		c           = repo.Entry{
+			Name: p.ChartName,
+			URL:  p.ChartRepo,
+		}
+	)
 
-	// build helm flags
-	home := fmt.Sprintf("--home=%s", p.HelmHome)
-	untarDir := fmt.Sprintf("--untardir=%s", p.ChartHome)
-	repo := fmt.Sprintf("--repo=%s", p.ChartRepo)
-	helmCmd := exec.Command("helm", "fetch", home, "--untar", untarDir, repo, p.ChartVersionExp, p.ChartName)
-
-	var out bytes.Buffer
-	helmCmd.Stdout = &out
-	err := helmCmd.Run()
-	if err != nil {
-		p.logger.Printf("error executing command: %v with args: %v, error: %v\n", helmCmd.Path, helmCmd.Args, err)
+	if err = os.MkdirAll(filepath.Dir(repoFile), os.ModePerm); err != nil && !os.IsExist(err) {
 		return err
 	}
 
-	fileLocation := fmt.Sprintf("%s/%s", p.ChartHome, p.ChartName)
-	tempFileLocation := fileLocation + "-temp"
+	// Acquire a file lock for process synchronization
+	fileLock = flock.New(strings.Replace(repoFile, filepath.Ext(repoFile), ".lock", 1))
 
-	p.logger.Printf(fileLocation)
-	err = os.Rename(fileLocation, tempFileLocation)
+	lockContext, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	locked, err = fileLock.TryLockContext(lockContext, time.Second)
+	if err == nil && locked {
+		defer fileLock.Unlock()
+	}
 	if err != nil {
-		p.logger.Printf("error renaming: %v to: %v, error: %v\n", fileLocation, tempFileLocation, err)
+		return err
+	}
+	if b, err = ioutil.ReadFile(repoFile); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err = yaml.Unmarshal(b, &f); err != nil {
 		return err
 	}
 
-	err = utils.CopyDir(tempFileLocation, p.ChartHome, p.logger)
-	if err != nil {
-		p.logger.Printf("error copying directory from: %v, to: %v, error: %v\n", tempFileLocation, p.ChartHome, err)
+	if f.Has(p.ChartName) {
+		//fmt.Printf("repository name (%s) already exists\n", name)
+		return nil
+	}
+	if r, err = repo.NewChartRepository(&c, getter.All(settings)); err != nil {
+		fmt.Println(repoFile)
 		return err
 	}
-	p.logger.Printf(fileLocation)
-	err = os.RemoveAll(tempFileLocation)
-	if err != nil {
-		p.logger.Printf("error removing: %v, error: %v\n", tempFileLocation, err)
+
+	if _, err = r.DownloadIndexFile(); err != nil {
+		return errors.Wrapf(err, "looks like %q is not a valid chart repository or cannot be reached", p.ChartRepo)
+	}
+
+	f.Update(&c)
+
+	if err = f.WriteFile(repoFile, 0644); err != nil {
 		return err
 	}
 	return nil
-
 }
 
 func (p *HelmChartPlugin) templateHelm() ([]byte, error) {
