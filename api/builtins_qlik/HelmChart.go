@@ -2,6 +2,8 @@ package builtins_qlik
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -9,8 +11,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"crypto/sha256"
-	"encoding/hex"
 
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/ifc"
@@ -37,7 +37,7 @@ type HelmChartPlugin struct {
 	ldr              ifc.Loader
 	rf               *resmap.Factory
 	logger           *log.Logger
-	hash			 string
+	hash             string
 }
 
 func (p *HelmChartPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
@@ -97,12 +97,11 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 		p.ReleaseName = "default"
 	}
 
-
-	hashfolder := filepath.Join(p.ChartHome,".plugincache")
-	hashfile := filepath.Join(hashfolder,p.hash)
+	hashfolder := filepath.Join(p.ChartHome, ".plugincache")
+	hashfile := filepath.Join(hashfolder, p.hash)
 
 	var templatedYaml []byte
-	
+
 	if _, err = os.Stat(hashfile); err != nil {
 		if os.IsNotExist(err) {
 			err = p.initHelm()
@@ -119,13 +118,13 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 			} else if err != nil {
 				p.logger.Printf("error executing stat on file: %v, error: %v\n", p.ChartHome, err)
 			}
-		
+
 			err = p.deleteRequirements(p.ChartHome)
 			if err != nil {
 				p.logger.Printf("error executing deleteRequirements() for dir: %v, error: %v\n", p.ChartHome, err)
 				return nil, err
 			}
-		
+
 			templatedYaml, err = p.templateHelm()
 			if err != nil {
 				p.logger.Printf("error executing templateHelm(), error: %v\n", err)
