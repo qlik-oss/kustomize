@@ -12,7 +12,9 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
     "time"
 
 	"github.com/gofrs/flock"
@@ -23,9 +25,17 @@ import (
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/yaml"
 
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
-    "helm.sh/helm/v3/pkg/getter"
-    "helm.sh/helm/v3/pkg/repo"
+	"helm.sh/helm/v3/pkg/cli/values"
+	"helm.sh/helm/v3/pkg/downloader"
+	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/releaseutil"
+	"helm.sh/helm/v3/pkg/repo"
+	"helm.sh/helm/v3/pkg/strvals"
 )
 
 type HelmChartPlugin struct {
@@ -34,6 +44,7 @@ type HelmChartPlugin struct {
 	TmpChartHome     string                 `json:"tmpChartHome,omitempty" yaml:"tmpChartHome,omitempty"`
 	ChartVersion     string                 `json:"chartVersion,omitempty" yaml:"chartVersion,omitempty"`
 	ChartRepo        string                 `json:"chartRepo,omitempty" yaml:"chartRepo,omitempty"`
+	ChartRepoName    string                 `json:"chartRepoName,omitempty" yaml:"chartRepoName,omitempty"`
 	ValuesFrom       string                 `json:"valuesFrom,omitempty" yaml:"valuesFrom,omitempty"`
 	Values           map[string]interface{} `json:"values,omitempty" yaml:"values,omitempty"`
 	HelmHome         string                 `json:"helmHome,omitempty" yaml:"helmHome,omitempty"`
@@ -69,7 +80,7 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 	// make temp directory
 	dir, err := ioutil.TempDir("", "tempRoot")
 	if err != nil {
-		p.logger.Printf("error creating temporaty directory: %v\n", err)
+		p.logger.Printf("error creating temporary directory: %v\n", err)
 		return nil, err
 	}
 	dir = path.Join(dir, "../")
@@ -88,6 +99,12 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 		// make home for chart stuff
 		directory := fmt.Sprintf("%s/%s", dir, p.ChartName)
 		p.ChartHome = directory
+		if err = os.MkdirAll(directory, os.ModePerm); err != nil && !os.IsExist(err) {
+			return nil, err
+		}
+		if _, err = os.Create(fmt.Sprintf("%s/repositories.yaml",directory)); err != nil {
+			return nil, err
+		}
 	}
 
 	if p.HelmBin == "" {
@@ -114,27 +131,35 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 
 	hashfolder := filepath.Join(p.ChartHome, ".plugincache")
 	hashfile := filepath.Join(hashfolder, p.hash)
-
+	repositoryFile := filepath.Join(p.ChartHome, "repositories.yaml")
+	cacheHome := filepath.Join(p.ChartHome, ".chartcache")
 	var templatedYaml []byte
+	os.Setenv("HELM_NAMESPACE", p.ReleaseNamespace)
+	os.Setenv("XDG_CONFIG_HOME", p.ChartHome)
+	os.Setenv("XDG_CACHE_HOME", cacheHome)
+	settings = cli.New()
+	settings.RepositoryConfig = repositoryFile
 
 	if _, err = os.Stat(hashfile); err != nil {
 		if os.IsNotExist(err) {
-			err = p.initHelm()
+			err = p.fetchHelm()
 			if err != nil {
-				p.logger.Printf("error executing initHelm(), error: %v\n", err)
+				p.logger.Printf("error fetching repo info, error: %v\n", err)
 				return nil, err
 			}
-			if _, err = os.Stat(p.ChartHome); os.IsNotExist(err) {
-				err = p.fetchHelm()
-				if err != nil {
-					p.logger.Printf("error executing fetchHelm(), error: %v\n", err)
-					return nil, err
-				}
-			} else if err != nil {
-				p.logger.Printf("error executing stat on file: %v, error: %v\n", p.ChartHome, err)
+			if err = repoUpdate(); err != nil {
+				return nil, err
 			}
-
-			err = p.deleteRequirements(p.ChartHome)
+	
+			images, err := getImages(p.ReleaseName, p.ChartRepoName, p.ChartName, p.ChartVersion, p.ExtraArgs); 
+			fmt.Println(images)
+			 if err != nil {
+				return nil, err
+				}
+			for _, image := range images {
+				fmt.Println(image)
+			}
+			err = p.deleteRequirements()
 			if err != nil {
 				p.logger.Printf("error executing deleteRequirements() for dir: %v, error: %v\n", p.ChartHome, err)
 				return nil, err
@@ -171,8 +196,8 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 	return p.rf.NewResMapFromBytes(templatedYaml)
 }
 
-func (p *HelmChartPlugin) deleteRequirements(dir string) error {
-
+func (p *HelmChartPlugin) deleteRequirements() error {
+	dir := filepath.Dir(settings.RepositoryConfig)
 	d, err := os.Open(dir)
 	if err != nil {
 		p.logger.Printf("error opening directory %v, error: %v\n", dir, err)
@@ -204,18 +229,6 @@ func (p *HelmChartPlugin) deleteRequirements(dir string) error {
 	return nil
 }
 
-func (p *HelmChartPlugin) initHelm() error {
-	// build helm flags
-	home := fmt.Sprintf("--home=%s", p.HelmHome)
-	helmCmd := exec.Command(p.HelmBin, "init", home, "--client-only")
-	err := helmCmd.Run()
-	if err != nil {
-		p.logger.Printf("error executing command: %v with args: %v, error: %v\n", helmCmd.Path, helmCmd.Args, err)
-		return err
-	}
-	return nil
-}
-
 // RepoAdd adds repo with given name and url
 func  (p *HelmChartPlugin) fetchHelm() error {
     var (
@@ -232,11 +245,10 @@ func  (p *HelmChartPlugin) fetchHelm() error {
             Name: p.ChartName,
             URL:  p.ChartRepo,
         }
-    )
-
+	)
     if err = os.MkdirAll(filepath.Dir(repoFile), os.ModePerm); err != nil && !os.IsExist(err) {
         return err
-    }
+	}
 
     // Acquire a file lock for process synchronization
     fileLock = flock.New(strings.Replace(repoFile, filepath.Ext(repoFile), ".lock", 1))
@@ -257,13 +269,11 @@ func  (p *HelmChartPlugin) fetchHelm() error {
     if err = yaml.Unmarshal(b, &f); err != nil {
         return err
     }
-
     if f.Has(p.ChartName) {
-        //fmt.Printf("repository name (%s) already exists\n", name)
+        //fmt.Printf("repository name (%s) already exists\n", p.ChartName)
         return nil
     }
     if r, err = repo.NewChartRepository(&c, getter.All(settings)); err != nil {
-        fmt.Println(repoFile)
         return err
     }
 
@@ -277,6 +287,45 @@ func  (p *HelmChartPlugin) fetchHelm() error {
         return err
     }
     return nil
+}
+
+// RepoUpdate updates charts for all helm repos
+func repoUpdate() error {
+	var (
+		repoFile = settings.RepositoryConfig
+		err      error
+		f        *repo.File
+		r        *repo.ChartRepository
+		repos    []*repo.ChartRepository
+		cfg      *repo.Entry
+		wg       sync.WaitGroup
+	)
+	f, err = repo.LoadFile(repoFile)
+	if os.IsNotExist(errors.Cause(err)) || len(f.Repositories) == 0 {
+		return errors.New("no repositories found. You must add one before updating")
+	}
+
+	for _, cfg = range f.Repositories {
+		r, err = repo.NewChartRepository(cfg, getter.All(settings))
+		if err != nil {
+			return err
+		}
+		repos = append(repos, r)
+	}
+	
+
+	// fmt.Printf("Downloading helm chart index ...\n")
+	for _, r = range repos {
+		wg.Add(1)
+		go func(re *repo.ChartRepository) {
+			defer wg.Done()
+			if _, err = re.DownloadIndexFile(); err != nil {
+				 fmt.Printf("...Unable to get an update from the %q chart repository (%s):\n\t%s\n", re.Config.Name, re.Config.URL, err)
+			}
+		}(r)
+	}
+	wg.Wait()
+	return nil
 }
 
 func (p *HelmChartPlugin) templateHelm() ([]byte, error) {
@@ -328,6 +377,137 @@ func (p *HelmChartPlugin) templateHelm() ([]byte, error) {
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+func debug(format string, v ...interface{}) {
+	//format = fmt.Sprintf("[debug] %s\n", format)
+	//log.Output(2, fmt.Sprintf(format, v...))
+}
+
+func getImages(name, repo, chart, version, args string) ([]string, error) {
+
+	var (
+		actionConfig   = new(action.Configuration)
+		client         = action.NewInstall(actionConfig)
+		err            error
+		validate       bool
+		rel            *release.Release
+		m              *release.Hook
+		manifests      bytes.Buffer
+		splitManifests map[string]string
+		manifest       string
+		any            = map[string]interface{}{}
+		images         = make([]string, 0)
+		k              string
+		v              interface{}
+	)
+
+	if err = actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), debug); err != nil {
+		return images, err
+	}
+
+	client.DryRun = true
+	client.ReleaseName = name
+	client.Replace = true // Skip the name check
+	client.ClientOnly = !validate
+	if len(version) > 0 {
+		client.Version = version
+	}
+	//	client.APIVersions = chartutil.VersionSet(extraAPIs)
+	if rel, err = runInstall(name, repo, chart, args, client); err != nil {
+		return images, err
+	}
+
+	fmt.Fprintln(&manifests, strings.TrimSpace(rel.Manifest))
+	for _, m = range rel.Hooks {
+		fmt.Fprintf(&manifests, "---\n# Source: %s\n%s\n", m.Path, m.Manifest)
+	}
+	// fmt.Printf("Building Image List ...\n")
+	splitManifests = releaseutil.SplitManifests(manifests.String())
+	for _, manifest = range splitManifests {
+		if err = yaml.Unmarshal([]byte(manifest), &any); err != nil {
+			return images, err
+		}
+		for k, v = range any {
+			fmt.Println(k,v)
+			images = searchImages(k, v, images)
+		}
+	}
+	// fmt.Printf("Done Image List\n")
+	return uniqueNonEmptyElementsOf(images), nil
+}
+
+func runInstall(name, repo, chartName, sets string, client *action.Install) (*release.Release, error) {
+	var (
+		valueOpts             = &values.Options{}
+		vals                  map[string]interface{}
+		p                     getter.Providers
+		cp                    string
+		validInstallableChart bool
+		err                   error
+		chartRequested        *chart.Chart
+		req                   []*chart.Dependency
+		man                   *downloader.Manager
+	)
+
+	debug("Original chart version: %q", client.Version)
+	if client.Version == "" && client.Devel {
+		debug("setting version to >0.0.0-0")
+		client.Version = ">0.0.0-0"
+	}
+
+	if cp, err = client.ChartPathOptions.LocateChart(fmt.Sprintf("%s/%s", repo, chartName), settings); err != nil {
+		return nil, err
+	}
+
+	debug("CHART PATH: %s\n", cp)
+
+	p = getter.All(settings)
+	if vals, err = valueOpts.MergeValues(p); err != nil {
+		return nil, err
+	}
+
+	// Add args
+	if err = strvals.ParseInto(sets, vals); err != nil {
+		return nil, errors.Wrap(err, "failed parsing --set data")
+	}
+	// Check chart dependencies to make sure all are present in /charts
+	// fmt.Printf("Downloading helm chart ...\n")
+	if chartRequested, err = loader.Load(cp); err != nil {
+		return nil, err
+	}
+
+	validInstallableChart, err = isChartInstallable(chartRequested)
+	if !validInstallableChart {
+		return nil, err
+	}
+
+	if req = chartRequested.Metadata.Dependencies; req != nil {
+		// If CheckDependencies returns an error, we have unfulfilled dependencies.
+		// As of Helm 2.4.0, this is treated as a stopping condition:
+		// https://github.com/helm/helm/issues/2209
+		if err = action.CheckDependencies(chartRequested, req); err != nil {
+			if client.DependencyUpdate {
+				man = &downloader.Manager{
+					Out:              os.Stdout,
+					ChartPath:        cp,
+					Keyring:          client.ChartPathOptions.Keyring,
+					SkipUpdate:       false,
+					Getters:          p,
+					RepositoryConfig: settings.RepositoryConfig,
+					RepositoryCache:  settings.RepositoryCache,
+				}
+				if err = man.Update(); err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, err
+			}
+		}
+	}
+
+	client.Namespace = settings.Namespace()
+	return client.Run(chartRequested, vals)
 }
 
 func (p *HelmChartPlugin) applyPatches(templatedHelm []byte) ([]byte, error) {
@@ -411,4 +591,61 @@ func (p *HelmChartPlugin) buildPatches() ([]byte, error) {
 
 func NewHelmChartPlugin() resmap.GeneratorPlugin {
 	return &HelmChartPlugin{logger: utils.GetLogger("HelmChartPlugin")}
+}
+
+func isChartInstallable(ch *chart.Chart) (bool, error) {
+	switch ch.Metadata.Type {
+	case "", "application":
+		return true, nil
+	}
+	return false, errors.Errorf("%s charts are not installable", ch.Metadata.Type)
+}
+
+func searchImages(key string, value interface{}, images []string) []string {
+	var (
+		submap     map[interface{}]interface{}
+		stringlist []interface{}
+		k, v       interface{}
+		ok         bool
+		i          int
+	)
+
+	submap, ok = value.(map[interface{}]interface{})
+	if ok {
+		for k, v = range submap {
+			images = searchImages(k.(string), v, images)
+		}
+		return images
+	}
+	stringlist, ok = value.([]interface{})
+	if ok {
+		images = searchImages("size", len(stringlist), images)
+		for i, v = range stringlist {
+			images = searchImages(fmt.Sprintf("%d", i), v, images)
+		}
+		return images
+	}
+
+	if key == "image" {
+		images = append(images, fmt.Sprintf("%v", value))
+	}
+	return images
+}
+
+func uniqueNonEmptyElementsOf(s []string) []string {
+	var (
+		unique = make(map[string]bool, len(s))
+		us     = make([]string, len(unique))
+		elem   string
+	)
+	for _, elem = range s {
+		if len(elem) != 0 {
+			if !unique[elem] {
+				us = append(us, elem)
+				unique[elem] = true
+			}
+		}
+	}
+	sort.Strings(us)
+	return us
 }

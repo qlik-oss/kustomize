@@ -1,110 +1,93 @@
 package builtins_qlik
 
 import (
-    "fmt"
-    "testing"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
 
-    "github.com/stretchr/testify/assert"
-    "sigs.k8s.io/kustomize/api/builtins_qlik/utils/loadertest"
-    "sigs.k8s.io/kustomize/api/internal/k8sdeps/transformer"
-    "sigs.k8s.io/kustomize/api/k8sdeps/kunstruct"
-    "sigs.k8s.io/kustomize/api/resmap"
-    "sigs.k8s.io/kustomize/api/resource"
-    valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
-    "sigs.k8s.io/yaml"
+
+	"helm.sh/helm/v3/pkg/repo/repotest"
+	"sigs.k8s.io/kustomize/api/builtins_qlik/utils/loadertest"
+	"sigs.k8s.io/kustomize/api/internal/k8sdeps/transformer"
+	"sigs.k8s.io/kustomize/api/k8sdeps/kunstruct"
+	"sigs.k8s.io/kustomize/api/resmap"
+	"sigs.k8s.io/kustomize/api/resource"
+	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
 )
 
-func TestHelmChart(t *testing.T) {
-
-    testCases := []struct {
-        name                 string
-        pluginConfig         string
-        pluginInputResources string
-        expectedResult       string
-        checkAssertions      func(*testing.T, resmap.ResMap, string)
-    }{
-        {
-            name: "HelmValues success",
-            pluginConfig: `
-apiVersion: qlik.com/v1
-kind: HelmValues
-metadata:
-  name: qliksense
-chartName: qliksense
-releaseName: qliksense
-values:
-  config:
-    accessControl:
-      testing: 1234
-  qix-sessions:
-    testing: true
-`,
-            pluginInputResources: `
-apiVersion: apps/v1
-kind: HelmChart
-metadata:
-  name: qliksense
-chartName: qliksense
-releaseName: qliksense
-values:
-  config:
-    accessControl:
-      testing: 4321
-`,
-            expectedResult: `
-apiVersion: apps/v1
-chartName: qliksense
-kind: HelmChart
-metadata:
-  name: qliksense
-releaseName: qliksense
-values:
-  config:
-    accessControl:
-      testing: 4321
-  qix-sessions:
-    testing: true
-`,
-
-            checkAssertions: func(t *testing.T, resMap resmap.ResMap, expectedResult string) {
-                result, err := resMap.AsYaml()
-                assert.NoError(t, err)
-
-                expected, err := yaml.JSONToYAML([]byte(expectedResult))
-                assert.NoError(t, err)
-
-                assert.Equal(t, expected, result)
-
-            },
-        },
-    }
-    for _, testCase := range testCases {
-        t.Run(testCase.name, func(t *testing.T) {
-            resourceFactory := resmap.NewFactory(resource.NewFactory(
-                kunstruct.NewKunstructuredFactoryImpl()), transformer.NewFactoryImpl())
-
-            resMap, err := resourceFactory.NewResMapFromBytes([]byte(testCase.pluginInputResources))
-            if err != nil {
-                t.Fatalf("Err: %v", err)
-            }
-
-            plugin := NewHelmValuesPlugin()
-            err = plugin.Config(resmap.NewPluginHelpers(loadertest.NewFakeLoader("/"), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
-            if err != nil {
-                t.Fatalf("Err: %v", err)
-            }
-
-            err = plugin.Transform(resMap)
-            if err != nil {
-                t.Fatalf("Err: %v", err)
-            }
-
-            for _, res := range resMap.Resources() {
-                fmt.Printf("--res: %v\n", res.String())
-            }
-
-            testCase.checkAssertions(t, resMap, testCase.expectedResult)
-        })
-    }
+type mockPlugin struct {
 }
 
+func TestHelmChart(t *testing.T) {
+	srv, err := repotest.NewTempServer("testdata/testcharts/*.tgz*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Stop()
+
+	if err := srv.LinkIndices(); err != nil {
+		t.Fatal(err)
+	}
+
+	// all flags will get "-d outdir" appended.
+	tests := []struct {
+		name         string
+		args         string
+		expectFile   string
+		expectDir    bool
+		pluginConfig string
+	}{
+		{
+			name:       "Fetch and untar",
+			args:       "test/signtest --untar --untardir signtest",
+			expectFile: "./signtest",
+			expectDir:  true,
+			pluginConfig: `
+apiVersion: apps/v1
+kind: HelmChart
+metadata:
+  name: qliksense
+chartName: qliksense
+releaseName: qliksense
+chartRepoName: qliksense
+chartRepo: https://qlik.bintray.com/edge
+releaseNamespace: qliksense
+releaseName: qliksense
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resourceFactory := resmap.NewFactory(resource.NewFactory(
+				kunstruct.NewKunstructuredFactoryImpl()), transformer.NewFactoryImpl())
+
+			plugin := NewHelmChartPlugin()
+			err = plugin.Config(resmap.NewPluginHelpers(loadertest.NewFakeLoader("/"), valtest_test.MakeFakeValidator(), resourceFactory), []byte(tt.pluginConfig))
+			if err != nil {
+				t.Fatalf("Err: %v", err)
+			}
+
+			outdir := srv.Root()
+
+			resMap, err := plugin.Generate()
+			if err != nil {
+				t.Fatalf("Err: %v", err)
+			}
+
+			for _, res := range resMap.Resources() {
+				fmt.Printf("--res: %v\n", res.String())
+			}
+
+			ef := filepath.Join(outdir, tt.expectFile)
+			fi, err := os.Stat(ef)
+			if err != nil {
+				t.Errorf("%q: expected a file at %s. %s", tt.name, ef, err)
+			}
+			if fi.IsDir() != tt.expectDir {
+				t.Errorf("%q: expected directory=%t, but it's not.", tt.name, tt.expectDir)
+			}
+		})
+	}
+}
