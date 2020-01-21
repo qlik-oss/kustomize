@@ -14,7 +14,7 @@ import (
     "sigs.k8s.io/yaml"
 )
 
-func TestHelmValues(t *testing.T) {
+func TestHelmChart(t *testing.T) {
 
     testCases := []struct {
         name                 string
