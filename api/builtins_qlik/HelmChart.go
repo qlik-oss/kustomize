@@ -2,6 +2,7 @@ package builtins_qlik
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -11,11 +12,20 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
+    "time"
+
+	"github.com/gofrs/flock"
+    "github.com/pkg/errors"
 
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/ifc"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/yaml"
+
+	"helm.sh/helm/v3/pkg/cli"
+    "helm.sh/helm/v3/pkg/getter"
+    "helm.sh/helm/v3/pkg/repo"
 )
 
 type HelmChartPlugin struct {
@@ -39,6 +49,11 @@ type HelmChartPlugin struct {
 	logger           *log.Logger
 	hash             string
 }
+
+var (
+    settings *cli.EnvSettings
+    helmDir  = filepath.Join("helm", "repository")
+)
 
 func (p *HelmChartPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
 	p.ldr = h.Loader()
@@ -201,45 +216,67 @@ func (p *HelmChartPlugin) initHelm() error {
 	return nil
 }
 
-func (p *HelmChartPlugin) fetchHelm() error {
+// RepoAdd adds repo with given name and url
+func  (p *HelmChartPlugin) fetchHelm() error {
+    var (
+        repoFile    = settings.RepositoryConfig
+        fileLock    *flock.Flock
+        lockContext context.Context
+        cancel      context.CancelFunc
+        locked      bool
+        err         error
+        b           []byte
+        f           repo.File
+        r           *repo.ChartRepository
+        c           = repo.Entry{
+            Name: p.ChartName,
+            URL:  p.ChartRepo,
+        }
+    )
 
-	// build helm flags
-	home := fmt.Sprintf("--home=%s", p.HelmHome)
-	untarDir := fmt.Sprintf("--untardir=%s", p.ChartHome)
-	repo := fmt.Sprintf("--repo=%s", p.ChartRepo)
-	helmCmd := exec.Command("helm", "fetch", home, "--untar", untarDir, repo, p.ChartVersionExp, p.ChartName)
+    if err = os.MkdirAll(filepath.Dir(repoFile), os.ModePerm); err != nil && !os.IsExist(err) {
+        return err
+    }
 
-	var out bytes.Buffer
-	helmCmd.Stdout = &out
-	err := helmCmd.Run()
-	if err != nil {
-		p.logger.Printf("error executing command: %v with args: %v, error: %v\n", helmCmd.Path, helmCmd.Args, err)
-		return err
-	}
+    // Acquire a file lock for process synchronization
+    fileLock = flock.New(strings.Replace(repoFile, filepath.Ext(repoFile), ".lock", 1))
 
-	fileLocation := fmt.Sprintf("%s/%s", p.ChartHome, p.ChartName)
-	tempFileLocation := fileLocation + "-temp"
+    lockContext, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+    defer cancel()
 
-	p.logger.Printf(fileLocation)
-	err = os.Rename(fileLocation, tempFileLocation)
-	if err != nil {
-		p.logger.Printf("error renaming: %v to: %v, error: %v\n", fileLocation, tempFileLocation, err)
-		return err
-	}
+    locked, err = fileLock.TryLockContext(lockContext, time.Second)
+    if err == nil && locked {
+        defer fileLock.Unlock()
+    }
+    if err != nil {
+        return err
+    }
+    if b, err = ioutil.ReadFile(repoFile); err != nil && !os.IsNotExist(err) {
+        return err
+    }
+    if err = yaml.Unmarshal(b, &f); err != nil {
+        return err
+    }
 
-	err = utils.CopyDir(tempFileLocation, p.ChartHome, p.logger)
-	if err != nil {
-		p.logger.Printf("error copying directory from: %v, to: %v, error: %v\n", tempFileLocation, p.ChartHome, err)
-		return err
-	}
-	p.logger.Printf(fileLocation)
-	err = os.RemoveAll(tempFileLocation)
-	if err != nil {
-		p.logger.Printf("error removing: %v, error: %v\n", tempFileLocation, err)
-		return err
-	}
-	return nil
+    if f.Has(p.ChartName) {
+        //fmt.Printf("repository name (%s) already exists\n", name)
+        return nil
+    }
+    if r, err = repo.NewChartRepository(&c, getter.All(settings)); err != nil {
+        fmt.Println(repoFile)
+        return err
+    }
 
+    if _, err = r.DownloadIndexFile(); err != nil {
+        return errors.Wrapf(err, "looks like %q is not a valid chart repository or cannot be reached", p.ChartRepo)
+    }
+
+    f.Update(&c)
+
+    if err = f.WriteFile(repoFile, 0644); err != nil {
+        return err
+    }
+    return nil
 }
 
 func (p *HelmChartPlugin) templateHelm() ([]byte, error) {
