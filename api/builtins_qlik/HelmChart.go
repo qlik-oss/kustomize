@@ -147,7 +147,7 @@ func (p *HelmChartPlugin) executeHelmTemplate() ([]byte, error) {
 	}
 
 	if err := p.helmFetchIfRequired(settings, repoName); err != nil {
-		p.logger.Printf("error in fetching umbrella chart from helm, err: %v\n", err)
+		p.logger.Printf("error fetching from helm, err: %v\n", err)
 		return nil, err
 	}
 
