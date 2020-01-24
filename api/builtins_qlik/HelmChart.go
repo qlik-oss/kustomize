@@ -137,58 +137,65 @@ func (p *HelmChartPlugin) executeHelmTemplate() ([]byte, error) {
 	settings := cli.New()
 
 	if err := p.helmRepoAdd(settings, repoName, p.ChartRepo); err != nil {
-		log.Printf("error adding repo: %v, err: %v\n", p.ChartRepo, err)
+		p.logger.Printf("error adding repo: %v, err: %v\n", p.ChartRepo, err)
 		return nil, err
 	}
 
 	if err := p.helmReposUpdate(settings); err != nil {
-		log.Printf("error updating helm repos, err: %v\n", err)
+		p.logger.Printf("error updating helm repos, err: %v\n", err)
 		return nil, err
 	}
 
-	chartFetchPath := filepath.Join(p.ChartHome, p.ChartName)
-	if info, err := os.Stat(chartFetchPath); err != nil && !os.IsNotExist(err) {
-		log.Printf("error checking if chart was already fetched to path: %v, err: %v\n", chartFetchPath, err)
+	if err := p.helmFetchIfRequired(settings, repoName); err != nil {
+		p.logger.Printf("error in fetching umbrella chart from helm, err: %v\n", err)
 		return nil, err
-	} else if err != nil && os.IsNotExist(err) {
-		if err := p.helmFetch(settings, fmt.Sprintf("%v/%v", repoName, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
-			log.Printf("error fetching chart, err: %v\n", err)
-			return nil, err
-		}
-	} else if err == nil && !info.IsDir() {
-		err := fmt.Errorf("path: %v is occupied by a file instead of a chart directory\n", chartFetchPath)
-		log.Printf("fetch error: %v\n", err)
-		return nil, err
-	} else if err == nil && info.IsDir() {
-		log.Printf("nothing to do, chart is already at path: %v\n", chartFetchPath)
 	}
 
 	subChartPath := filepath.Join(p.ChartHome, p.ChartName, "charts", p.SubChart)
+
 	tmpSubChartPath, err := ioutil.TempDir("", p.SubChart)
 	if err != nil {
-		log.Printf("error creating temp subchart dir, err: %v\n", err)
+		p.logger.Printf("error creating temp subchart dir, err: %v\n", err)
 		return nil, err
 	}
 	defer os.RemoveAll(tmpSubChartPath)
 
 	err = utils.CopyDir(subChartPath, tmpSubChartPath, p.logger)
 	if err != nil {
-		log.Printf("error copying subchart path: %v to tmp directory: %v, err: %v\n", subChartPath, tmpSubChartPath, err)
+		p.logger.Printf("error copying subchart path: %v to tmp directory: %v, err: %v\n", subChartPath, tmpSubChartPath, err)
 		return nil, err
 	}
 
 	if err := p.deleteDependencies(tmpSubChartPath); err != nil {
-		log.Printf("error deleting dependencies for subchart: %v at path: %v, err: %v\n", p.SubChart, tmpSubChartPath, err)
+		p.logger.Printf("error deleting dependencies for subchart: %v at path: %v, err: %v\n", p.SubChart, tmpSubChartPath, err)
 		return nil, err
 	}
 
 	resources, err := p.helmTemplate(settings, tmpSubChartPath, p.ReleaseName, p.Values)
 	if err != nil {
-		log.Printf("error executing helm template for subchart: %v at path: %v, err: %v\n", p.SubChart, tmpSubChartPath, err)
+		p.logger.Printf("error executing helm template for subchart: %v at path: %v, err: %v\n", p.SubChart, tmpSubChartPath, err)
 		return nil, err
 	}
 
 	return resources, nil
+}
+
+func (p *HelmChartPlugin) helmFetchIfRequired(settings *cli.EnvSettings, repoName string) error {
+	var err error
+	chartFetchPath := filepath.Join(p.ChartHome, p.ChartName)
+	if info, err := os.Stat(chartFetchPath); err != nil && !os.IsNotExist(err) {
+		p.logger.Printf("error checking if chart was already fetched to path: %v, err: %v\n", chartFetchPath, err)
+	} else if err != nil && os.IsNotExist(err) {
+		if err = p.helmFetch(settings, fmt.Sprintf("%v/%v", repoName, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
+			p.logger.Printf("error fetching chart, err: %v\n", err)
+		}
+	} else if err == nil && !info.IsDir() {
+		err := fmt.Errorf("path: %v is occupied by a file instead of a chart directory\n", chartFetchPath)
+		p.logger.Printf("fetch error: %v\n", err)
+	} else if err == nil && info.IsDir() {
+		p.logger.Printf("nothing to do, chart is already at path: %v\n", chartFetchPath)
+	}
+	return err
 }
 
 func (p *HelmChartPlugin) helmRepoAdd(settings *cli.EnvSettings, name, url string) error {
