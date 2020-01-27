@@ -31,22 +31,24 @@ import (
 )
 
 type HelmChartPlugin struct {
-	ChartName        string                 `json:"chartName,omitempty" yaml:"chartName,omitempty"`
-	ChartHome        string                 `json:"chartHome,omitempty" yaml:"chartHome,omitempty"`
-	TmpChartHome     string                 `json:"tmpChartHome,omitempty" yaml:"tmpChartHome,omitempty"`
-	ChartVersion     string                 `json:"chartVersion,omitempty" yaml:"chartVersion,omitempty"`
-	ChartRepo        string                 `json:"chartRepo,omitempty" yaml:"chartRepo,omitempty"`
-	ValuesFrom       string                 `json:"valuesFrom,omitempty" yaml:"valuesFrom,omitempty"`
-	Values           map[string]interface{} `json:"values,omitempty" yaml:"values,omitempty"`
-	HelmHome         string                 `json:"helmHome,omitempty" yaml:"helmHome,omitempty"`
-	ReleaseName      string                 `json:"releaseName,omitempty" yaml:"releaseName,omitempty"`
-	ReleaseNamespace string                 `json:"releaseNamespace,omitempty" yaml:"releaseNamespace,omitempty"`
-	ExtraArgs        string                 `json:"extraArgs,omitempty" yaml:"extraArgs,omitempty"`
-	SubChart         string                 `json:"subChart,omitempty" yaml:"subChart,omitempty"`
-	rf               *resmap.Factory
-	logger           *log.Logger
-	hash             string
-	hashFolder       string
+	ChartName               string                 `json:"chartName,omitempty" yaml:"chartName,omitempty"`
+	ChartHome               string                 `json:"chartHome,omitempty" yaml:"chartHome,omitempty"`
+	TmpChartHome            string                 `json:"tmpChartHome,omitempty" yaml:"tmpChartHome,omitempty"`
+	ChartVersion            string                 `json:"chartVersion,omitempty" yaml:"chartVersion,omitempty"`
+	ChartRepo               string                 `json:"chartRepo,omitempty" yaml:"chartRepo,omitempty"`
+	ChartRepoName           string                 `json:"chartRepoName,omitempty" yaml:"chartRepoName,omitempty"`
+	RenderChartDependencies bool                   `json:"renderChartDependencies,omitempty" yaml:"renderChartDependencies,omitempty"`
+	ValuesFrom              string                 `json:"valuesFrom,omitempty" yaml:"valuesFrom,omitempty"`
+	Values                  map[string]interface{} `json:"values,omitempty" yaml:"values,omitempty"`
+	HelmHome                string                 `json:"helmHome,omitempty" yaml:"helmHome,omitempty"`
+	ReleaseName             string                 `json:"releaseName,omitempty" yaml:"releaseName,omitempty"`
+	ReleaseNamespace        string                 `json:"releaseNamespace,omitempty" yaml:"releaseNamespace,omitempty"`
+	ExtraArgs               string                 `json:"extraArgs,omitempty" yaml:"extraArgs,omitempty"`
+	SubChart                string                 `json:"subChart,omitempty" yaml:"subChart,omitempty"`
+	rf                      *resmap.Factory
+	logger                  *log.Logger
+	hash                    string
+	hashFolder              string
 }
 
 func (p *HelmChartPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
@@ -78,6 +80,10 @@ func (p *HelmChartPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) 
 
 	if p.ChartRepo == "" {
 		p.ChartRepo = "https://qlik.bintray.com/edge"
+	}
+
+	if p.ChartRepoName == "" {
+		p.ChartRepoName = "qlik"
 	}
 
 	if p.ReleaseName == "" {
@@ -129,41 +135,52 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 }
 
 func (p *HelmChartPlugin) executeHelmTemplate() ([]byte, error) {
-	const repoName = "qlik"
-
 	os.Setenv("HELM_NAMESPACE", p.ReleaseNamespace)
 	os.Setenv("XDG_CONFIG_HOME", p.HelmHome)
 	os.Setenv("XDG_CACHE_HOME", p.HelmHome)
 	settings := cli.New()
 
-	if err := p.helmFetchIfRequired(settings, repoName); err != nil {
+	if err := p.helmFetchIfRequired(settings, p.ChartRepoName); err != nil {
 		p.logger.Printf("error checking/fetching chart, err: %v\n", err)
 		return nil, err
 	}
 
-	subChartPath := filepath.Join(p.ChartHome, p.ChartName, "charts", p.SubChart)
+	var chartPath string
+	var chartName string
 
-	tmpSubChartPath, err := ioutil.TempDir("", p.SubChart)
-	if err != nil {
-		p.logger.Printf("error creating temp subchart dir, err: %v\n", err)
-		return nil, err
-	}
-	defer os.RemoveAll(tmpSubChartPath)
-
-	err = utils.CopyDir(subChartPath, tmpSubChartPath, p.logger)
-	if err != nil {
-		p.logger.Printf("error copying subchart path: %v to tmp directory: %v, err: %v\n", subChartPath, tmpSubChartPath, err)
-		return nil, err
+	if p.SubChart != "" {
+		chartName = p.SubChart
+		chartPath = filepath.Join(p.ChartHome, p.ChartName, "charts", p.SubChart)
+	} else {
+		chartName = p.ChartName
+		chartPath = filepath.Join(p.ChartHome, p.ChartName)
 	}
 
-	if err := p.deleteDependencies(tmpSubChartPath); err != nil {
-		p.logger.Printf("error deleting dependencies for subchart: %v at path: %v, err: %v\n", p.SubChart, tmpSubChartPath, err)
-		return nil, err
+	if !p.RenderChartDependencies {
+		tmpChartPath, err := ioutil.TempDir("", "HelmChartPlugin-chart")
+		if err != nil {
+			p.logger.Printf("error creating temp subchart dir, err: %v\n", err)
+			return nil, err
+		}
+		defer os.RemoveAll(tmpChartPath)
+
+		err = utils.CopyDir(chartPath, tmpChartPath, p.logger)
+		if err != nil {
+			p.logger.Printf("error copying chart: %v at path: %v to tmp directory: %v, err: %v\n", chartName, chartPath, tmpChartPath, err)
+			return nil, err
+		}
+
+		if err := p.deleteDependencies(tmpChartPath); err != nil {
+			p.logger.Printf("error deleting dependencies for chart: %v at path: %v, err: %v\n", chartName, tmpChartPath, err)
+			return nil, err
+		}
+
+		chartPath = tmpChartPath
 	}
 
-	resources, err := p.helmTemplate(settings, tmpSubChartPath, p.ReleaseName, p.Values)
+	resources, err := p.helmTemplate(settings, chartPath, p.ReleaseName, p.Values)
 	if err != nil {
-		p.logger.Printf("error executing helm template for subchart: %v at path: %v, err: %v\n", p.SubChart, tmpSubChartPath, err)
+		p.logger.Printf("error executing helm template for chart: %v at path: %v, err: %v\n", chartName, chartPath, err)
 		return nil, err
 	}
 
