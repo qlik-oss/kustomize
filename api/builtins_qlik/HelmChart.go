@@ -136,18 +136,8 @@ func (p *HelmChartPlugin) executeHelmTemplate() ([]byte, error) {
 	os.Setenv("XDG_CACHE_HOME", p.HelmHome)
 	settings := cli.New()
 
-	if err := p.helmRepoAdd(settings, repoName, p.ChartRepo); err != nil {
-		p.logger.Printf("error adding repo: %v, err: %v\n", p.ChartRepo, err)
-		return nil, err
-	}
-
-	if err := p.helmReposUpdate(settings); err != nil {
-		p.logger.Printf("error updating helm repos, err: %v\n", err)
-		return nil, err
-	}
-
 	if err := p.helmFetchIfRequired(settings, repoName); err != nil {
-		p.logger.Printf("error fetching from helm, err: %v\n", err)
+		p.logger.Printf("error checking/fetching chart, err: %v\n", err)
 		return nil, err
 	}
 
@@ -180,22 +170,43 @@ func (p *HelmChartPlugin) executeHelmTemplate() ([]byte, error) {
 	return resources, nil
 }
 
-func (p *HelmChartPlugin) helmFetchIfRequired(settings *cli.EnvSettings, repoName string) error {
-	var err error
-	chartFetchPath := filepath.Join(p.ChartHome, p.ChartName)
-	if info, err := os.Stat(chartFetchPath); err != nil && !os.IsNotExist(err) {
-		p.logger.Printf("error checking if chart was already fetched to path: %v, err: %v\n", chartFetchPath, err)
-	} else if err != nil && os.IsNotExist(err) {
-		if err = p.helmFetch(settings, fmt.Sprintf("%v/%v", repoName, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
-			p.logger.Printf("error fetching chart, err: %v\n", err)
-		}
-	} else if err == nil && !info.IsDir() {
-		err := fmt.Errorf("path: %v is occupied by a file instead of a chart directory\n", chartFetchPath)
-		p.logger.Printf("fetch error: %v\n", err)
+func (p *HelmChartPlugin) directoryExists(path string) (exists bool, err error) {
+	if info, err := os.Stat(path); err != nil && os.IsNotExist(err) {
+		exists = false
+		err = nil
+	} else if err != nil && !os.IsNotExist(err) {
+		exists = false
 	} else if err == nil && info.IsDir() {
-		p.logger.Printf("nothing to do, chart is already at path: %v\n", chartFetchPath)
+		exists = true
+	} else if err == nil && !info.IsDir() {
+		exists = false
+		err = fmt.Errorf("path: %v is occupied by a file instead of a directory\n", path)
 	}
-	return err
+	return exists, err
+}
+
+func (p *HelmChartPlugin) helmFetchIfRequired(settings *cli.EnvSettings, repoName string) error {
+	chartDir := filepath.Join(p.ChartHome, p.ChartName)
+	if exists, err := p.directoryExists(chartDir); err != nil {
+		p.logger.Printf("error checking if chart was already fetched to path: %v, err: %v\n", chartDir, err)
+		return err
+	} else if !exists {
+		if err := p.helmRepoAdd(settings, repoName, p.ChartRepo); err != nil {
+			p.logger.Printf("error adding repo: %v, err: %v\n", p.ChartRepo, err)
+			return err
+		}
+		if err := p.helmReposUpdate(settings); err != nil {
+			p.logger.Printf("error updating helm repos, err: %v\n", err)
+			return err
+		}
+		if err := p.helmFetch(settings, fmt.Sprintf("%v/%v", repoName, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
+			p.logger.Printf("error fetching chart, err: %v\n", err)
+			return err
+		}
+	} else {
+		p.logger.Printf("nothing to do, chart is already at path: %v\n", chartDir)
+	}
+	return nil
 }
 
 func (p *HelmChartPlugin) helmRepoAdd(settings *cli.EnvSettings, name, url string) error {
