@@ -31,24 +31,23 @@ import (
 )
 
 type HelmChartPlugin struct {
-	ChartName               string                 `json:"chartName,omitempty" yaml:"chartName,omitempty"`
-	ChartHome               string                 `json:"chartHome,omitempty" yaml:"chartHome,omitempty"`
-	TmpChartHome            string                 `json:"tmpChartHome,omitempty" yaml:"tmpChartHome,omitempty"`
-	ChartVersion            string                 `json:"chartVersion,omitempty" yaml:"chartVersion,omitempty"`
-	ChartRepo               string                 `json:"chartRepo,omitempty" yaml:"chartRepo,omitempty"`
-	ChartRepoName           string                 `json:"chartRepoName,omitempty" yaml:"chartRepoName,omitempty"`
-	RenderChartDependencies bool                   `json:"renderChartDependencies,omitempty" yaml:"renderChartDependencies,omitempty"`
-	ValuesFrom              string                 `json:"valuesFrom,omitempty" yaml:"valuesFrom,omitempty"`
-	Values                  map[string]interface{} `json:"values,omitempty" yaml:"values,omitempty"`
-	HelmHome                string                 `json:"helmHome,omitempty" yaml:"helmHome,omitempty"`
-	ReleaseName             string                 `json:"releaseName,omitempty" yaml:"releaseName,omitempty"`
-	ReleaseNamespace        string                 `json:"releaseNamespace,omitempty" yaml:"releaseNamespace,omitempty"`
-	ExtraArgs               string                 `json:"extraArgs,omitempty" yaml:"extraArgs,omitempty"`
-	SubChart                string                 `json:"subChart,omitempty" yaml:"subChart,omitempty"`
-	rf                      *resmap.Factory
-	logger                  *log.Logger
-	hash                    string
-	hashFolder              string
+	ChartName        string                 `json:"chartName,omitempty" yaml:"chartName,omitempty"`
+	ChartHome        string                 `json:"chartHome,omitempty" yaml:"chartHome,omitempty"`
+	TmpChartHome     string                 `json:"tmpChartHome,omitempty" yaml:"tmpChartHome,omitempty"`
+	ChartVersion     string                 `json:"chartVersion,omitempty" yaml:"chartVersion,omitempty"`
+	ChartRepo        string                 `json:"chartRepo,omitempty" yaml:"chartRepo,omitempty"`
+	ChartRepoName    string                 `json:"chartRepoName,omitempty" yaml:"chartRepoName,omitempty"`
+	ValuesFrom       string                 `json:"valuesFrom,omitempty" yaml:"valuesFrom,omitempty"`
+	Values           map[string]interface{} `json:"values,omitempty" yaml:"values,omitempty"`
+	HelmHome         string                 `json:"helmHome,omitempty" yaml:"helmHome,omitempty"`
+	ReleaseName      string                 `json:"releaseName,omitempty" yaml:"releaseName,omitempty"`
+	ReleaseNamespace string                 `json:"releaseNamespace,omitempty" yaml:"releaseNamespace,omitempty"`
+	ExtraArgs        string                 `json:"extraArgs,omitempty" yaml:"extraArgs,omitempty"`
+	SubChart         string                 `json:"subChart,omitempty" yaml:"subChart,omitempty"`
+	rf               *resmap.Factory
+	logger           *log.Logger
+	hash             string
+	hashFolder       string
 }
 
 func (p *HelmChartPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
@@ -154,28 +153,6 @@ func (p *HelmChartPlugin) executeHelmTemplate() ([]byte, error) {
 	} else {
 		chartName = p.ChartName
 		chartPath = filepath.Join(p.ChartHome, p.ChartName)
-	}
-
-	if !p.RenderChartDependencies {
-		tmpChartPath, err := ioutil.TempDir("", "HelmChartPlugin-chart")
-		if err != nil {
-			p.logger.Printf("error creating temp subchart dir, err: %v\n", err)
-			return nil, err
-		}
-		defer os.RemoveAll(tmpChartPath)
-
-		err = utils.CopyDir(chartPath, tmpChartPath, p.logger)
-		if err != nil {
-			p.logger.Printf("error copying chart: %v at path: %v to tmp directory: %v, err: %v\n", chartName, chartPath, tmpChartPath, err)
-			return nil, err
-		}
-
-		if err := p.deleteDependencies(tmpChartPath); err != nil {
-			p.logger.Printf("error deleting dependencies for chart: %v at path: %v, err: %v\n", chartName, tmpChartPath, err)
-			return nil, err
-		}
-
-		chartPath = tmpChartPath
 	}
 
 	resources, err := p.helmTemplate(settings, chartPath, p.ReleaseName, p.Values)
@@ -392,33 +369,6 @@ func (p *HelmChartPlugin) runInstall(settings *cli.EnvSettings, chartPath string
 
 	client.Namespace = settings.Namespace()
 	return client.Run(chartRequested, vals)
-}
-
-func (p *HelmChartPlugin) deleteDependencies(chartPath string) error {
-	if requirementsFilePaths, err := filepath.Glob(filepath.Join(chartPath, "requirements.*")); err != nil {
-		return err
-	} else {
-		for _, requirementsFilePath := range requirementsFilePaths {
-			if requirementsFileInfo, err := os.Stat(requirementsFilePath); err == nil && requirementsFileInfo.Mode().IsRegular() {
-				err := os.Remove(requirementsFilePath)
-				if err != nil {
-					p.logger.Printf("error deleting the requirements file %v, error: %v\n", requirementsFilePath, err)
-					return err
-				}
-			}
-		}
-	}
-
-	chartsDirPath := filepath.Join(chartPath, "charts")
-	if requirementsFileInfo, err := os.Stat(chartsDirPath); err == nil && requirementsFileInfo.Mode().IsDir() {
-		err := os.RemoveAll(chartsDirPath)
-		if err != nil {
-			p.logger.Printf("error deleting charts directory: %v, error: %v\n", chartsDirPath, err)
-			return err
-		}
-	}
-
-	return nil
 }
 
 func isChartInstallable(ch *chart.Chart) (bool, error) {
