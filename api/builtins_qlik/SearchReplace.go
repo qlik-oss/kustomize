@@ -6,7 +6,6 @@ import (
 	"regexp"
 
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
-	"sigs.k8s.io/kustomize/api/internal/plugins/builtinconfig"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/transform"
 	"sigs.k8s.io/kustomize/api/types"
@@ -22,7 +21,6 @@ type SearchReplacePlugin struct {
 	logger            *log.Logger
 	fieldSpec         types.FieldSpec
 	re                *regexp.Regexp
-	tConfig           *builtinconfig.TransformerConfig
 }
 
 func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
