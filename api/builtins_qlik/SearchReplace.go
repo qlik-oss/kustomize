@@ -6,6 +6,7 @@ import (
 	"regexp"
 
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
+	"sigs.k8s.io/kustomize/api/internal/plugins/builtinconfig"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/transform"
 	"sigs.k8s.io/kustomize/api/types"
@@ -13,13 +14,15 @@ import (
 )
 
 type SearchReplacePlugin struct {
-	Target    *types.Selector `json:"target,omitempty" yaml:"target,omitempty"`
-	Path      string          `json:"path,omitempty" yaml:"path,omitempty"`
-	Search    string          `json:"search,omitempty" yaml:"search,omitempty"`
-	Replace   string          `json:"replace,omitempty" yaml:"replace,omitempty"`
-	logger    *log.Logger
-	fieldSpec types.FieldSpec
-	re        *regexp.Regexp
+	Target            *types.Selector `json:"target,omitempty" yaml:"target,omitempty"`
+	Path              string          `json:"path,omitempty" yaml:"path,omitempty"`
+	Search            string          `json:"search,omitempty" yaml:"search,omitempty"`
+	Replace           string          `json:"replace,omitempty" yaml:"replace,omitempty"`
+	ReplaceWithObjRef types.Var       `json:"replaceWithObjRef,omitempty" yaml:"replaceWithObjRef,omitempty"`
+	logger            *log.Logger
+	fieldSpec         types.FieldSpec
+	re                *regexp.Regexp
+	tConfig           *builtinconfig.TransformerConfig
 }
 
 func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
@@ -52,6 +55,17 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 	if err != nil {
 		p.logger.Printf("error selecting resources based on the target selector, error: %v\n", err)
 		return err
+	}
+	if p.Replace == "" {
+		for _, res := range m.Resources() {
+			if p.ReplaceWithObjRef.ObjRef.GVK() == res.GetGvk() {
+				s, err := res.GetFieldValue(p.ReplaceWithObjRef.FieldRef.FieldPath)
+				if err != nil {
+					continue
+				}
+				p.Replace = s.(string)
+			}
+		}
 	}
 	for _, r := range resources {
 		err := transform.MutateField(
