@@ -55,6 +55,13 @@ func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err err
 }
 
 func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
+	if streamAsYaml, err := m.AsYaml(); err != nil {
+		p.logger.Printf("error transforming stream to yaml: %v\n", err)
+		return err
+	} else {
+		p.logger.Printf("transforming stream:\n---\n%v\n", string(streamAsYaml))
+	}
+
 	resources, err := m.Select(*p.Target)
 	if err != nil {
 		p.logger.Printf("error selecting resources based on the target selector, error: %v\n", err)
