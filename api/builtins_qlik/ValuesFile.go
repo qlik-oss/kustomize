@@ -16,34 +16,19 @@ import (
 )
 
 type ValuesFilePlugin struct {
-	DataSource                    map[string]interface{} `json:"dataSource,omitempty" yaml:"dataSource,omitempty"`
-	ValuesFile                    string                 `json:"valuesFile,omitempty" yaml:"valuesFile,omitempty"`
-	LockRetryDelayMinMilliSeconds int                    `json:"lockRetryDelayMinMilliSeconds,omitempty" yaml:"lockRetryDelayMinMilliSeconds,omitempty"`
-	LockRetryDelayMaxMilliSeconds int                    `json:"lockRetryDelayMaxMilliSeconds,omitempty" yaml:"lockRetryDelayMaxMilliSeconds,omitempty"`
-	LockTimeoutSeconds            int                    `json:"lockTimeoutSeconds,omitempty" yaml:"lockTimeoutSeconds,omitempty"`
-	Root                          string
-	ldr                           ifc.Loader
-	rf                            *resmap.Factory
-	logger                        *log.Logger
+	DataSource map[string]interface{} `json:"dataSource,omitempty" yaml:"dataSource,omitempty"`
+	ValuesFile string                 `json:"valuesFile,omitempty" yaml:"valuesFile,omitempty"`
+	Root       string
+	ldr        ifc.Loader
+	rf         *resmap.Factory
+	logger     *log.Logger
 }
 
 func (p *ValuesFilePlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
 	p.ldr = h.Loader()
 	p.rf = h.ResmapFactory()
 	p.Root = h.Loader().Root()
-	if err := yaml.Unmarshal(c, p); err != nil {
-		return err
-	}
-	if p.LockRetryDelayMinMilliSeconds == 0 {
-		p.LockRetryDelayMinMilliSeconds = utils.DefaultLockRetryDelayMinMilliSeconds
-	}
-	if p.LockRetryDelayMaxMilliSeconds == 0 {
-		p.LockRetryDelayMaxMilliSeconds = utils.DefaultLockRetryDelayMaxMilliSeconds
-	}
-	if p.LockTimeoutSeconds == 0 {
-		p.LockTimeoutSeconds = utils.DefaultLockTimeoutSeconds
-	}
-	return nil
+	return yaml.Unmarshal(c, p)
 }
 
 func (p *ValuesFilePlugin) mergeFiles(orig map[string]interface{}, tmpl map[string]interface{}) (map[string]interface{}, error) {
@@ -137,8 +122,7 @@ func (p *ValuesFilePlugin) Transform(m resmap.ResMap) error {
 			p.logger.Printf("error getting resource as yaml: %v, error: %v\n", r.GetName(), err)
 			return errors.New("Error: Not a valid yaml file")
 		}
-		output, err := utils.RunGomplate(dataSource, p.Root, env, string(fileData), p.LockTimeoutSeconds,
-			p.LockRetryDelayMinMilliSeconds, p.LockRetryDelayMaxMilliSeconds, p.logger)
+		output, err := utils.RunGomplate(dataSource, p.Root, env, string(fileData), p.logger)
 		if err != nil {
 			p.logger.Printf("error executing runGomplate(), error: %v\n", err)
 			return err

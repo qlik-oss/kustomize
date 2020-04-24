@@ -14,33 +14,18 @@ import (
 )
 
 type GomplatePlugin struct {
-	DataSource                    map[string]interface{} `json:"dataSource,omitempty" yaml:"dataSource,omitempty"`
-	LockRetryDelayMinMilliSeconds int                    `json:"lockRetryDelayMinMilliSeconds,omitempty" yaml:"lockRetryDelayMinMilliSeconds,omitempty"`
-	LockRetryDelayMaxMilliSeconds int                    `json:"lockRetryDelayMaxMilliSeconds,omitempty" yaml:"lockRetryDelayMaxMilliSeconds,omitempty"`
-	LockTimeoutSeconds            int                    `json:"lockTimeoutSeconds,omitempty" yaml:"lockTimeoutSeconds,omitempty"`
-	Pwd                           string
-	ldr                           ifc.Loader
-	rf                            *resmap.Factory
-	logger                        *log.Logger
+	DataSource map[string]interface{} `json:"dataSource,omitempty" yaml:"dataSource,omitempty"`
+	Pwd        string
+	ldr        ifc.Loader
+	rf         *resmap.Factory
+	logger     *log.Logger
 }
 
 func (p *GomplatePlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
 	p.ldr = h.Loader()
 	p.rf = h.ResmapFactory()
 	p.Pwd = h.Loader().Root()
-	if err := yaml.Unmarshal(c, p); err != nil {
-		return err
-	}
-	if p.LockRetryDelayMinMilliSeconds == 0 {
-		p.LockRetryDelayMinMilliSeconds = utils.DefaultLockRetryDelayMinMilliSeconds
-	}
-	if p.LockRetryDelayMaxMilliSeconds == 0 {
-		p.LockRetryDelayMaxMilliSeconds = utils.DefaultLockRetryDelayMaxMilliSeconds
-	}
-	if p.LockTimeoutSeconds == 0 {
-		p.LockTimeoutSeconds = utils.DefaultLockTimeoutSeconds
-	}
-	return nil
+	return yaml.Unmarshal(c, p)
 }
 
 func (p *GomplatePlugin) Transform(m resmap.ResMap) error {
@@ -119,10 +104,8 @@ func (p *GomplatePlugin) Transform(m resmap.ResMap) error {
 			return err
 		}
 
-		pwd := p.Pwd
-		if output, err := utils.RunGomplate(dataSource, pwd, env, string(yamlByte), p.LockTimeoutSeconds,
-			p.LockRetryDelayMinMilliSeconds, p.LockRetryDelayMaxMilliSeconds, p.logger); err != nil {
-			p.logger.Printf("error executing runGomplate() on dataSource: %v, in directory: %v, error: %v\n", dataSource, pwd, err)
+		if output, err := utils.RunGomplate(dataSource, p.Pwd, env, string(yamlByte), p.logger); err != nil {
+			p.logger.Printf("error executing runGomplate() on dataSource: %v, in directory: %v, error: %v\n", dataSource, p.Pwd, err)
 		} else {
 			res, err := p.rf.RF().FromBytes(output)
 			if err != nil {

@@ -7,18 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/hairyhenderson/gomplate/v3"
 )
 
-var gomplateLockFilePath string
+var gomplateMutex sync.Mutex
 
-func init() {
-	gomplateLockFilePath = filepath.Join(os.TempDir(), "qkp-gomplate.flock")
-}
-
-func RunGomplate(dataSource string, pwd string, env []string, template string,
-	lockTimeoutSeconds, retryDelayMinMilliseconds, retryDelayMaxMilliseconds int, logger *log.Logger) ([]byte, error) {
+func RunGomplate(dataSource string, pwd string, env []string, template string, logger *log.Logger) ([]byte, error) {
 
 	var opts gomplate.Config
 	opts.DataSources = []string{fmt.Sprintf("data=%s", filepath.Join(pwd, dataSource))}
@@ -41,12 +37,8 @@ func RunGomplate(dataSource string, pwd string, env []string, template string,
 	defer os.Remove(tmpFile.Name())
 	opts.OutputFiles = []string{tmpFile.Name()}
 
-	if unlockFn, err := LockPath(gomplateLockFilePath, lockTimeoutSeconds, retryDelayMinMilliseconds, retryDelayMaxMilliseconds, logger); err != nil {
-		logger.Printf("error locking %v, error: %v\n", gomplateLockFilePath, err)
-		return nil, err
-	} else {
-		defer unlockFn()
-	}
+	gomplateMutex.Lock()
+	defer gomplateMutex.Unlock()
 
 	logger.Printf("executing gomplate.RunTemplates() with opts: %v\n", opts)
 	if err := gomplate.RunTemplates(&opts); err != nil {
