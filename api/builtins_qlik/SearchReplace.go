@@ -79,15 +79,17 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 		}
 	}
 	for _, r := range resources {
-		pathSlice := p.fieldSpec.PathSlice()
 		if p.fieldSpec.Path == "/" {
-			if newRootObject, err := p.searchAndReplace(r.Map(), false); err != nil {
+			if newRoot, err := p.searchAndReplace(r.Map(), false); err != nil {
 				p.logger.Printf("error executing transformers.MutateField(), error: %v\n", err)
 				return err
+			} else if newRootMap, newRootIsMap := newRoot.(map[string]interface{}); !newRootIsMap {
+				return errors.New("search/replace on root did not return a map[string]interface{}")
 			} else {
-				r.SetMap(newRootObject.(map[string]interface{}))
+				r.SetMap(newRootMap)
 			}
 		} else {
+			pathSlice := p.fieldSpec.PathSlice()
 			if err := transform.MutateField(
 				r.Map(),
 				pathSlice,
