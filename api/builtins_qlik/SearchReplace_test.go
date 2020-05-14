@@ -925,9 +925,6 @@ data:
 	}
 	plugin := SearchReplacePlugin{logger: utils.GetLogger("SearchReplacePlugin")}
 	for _, testCase := range testCases {
-		if testCase.name != "replace root" {
-			continue
-		}
 		t.Run(testCase.name, func(t *testing.T) {
 			resourceFactory := resmap.NewFactory(resource.NewFactory(kunstruct.NewKunstructuredFactoryImpl()), transformer.NewFactoryImpl())
 
