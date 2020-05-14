@@ -80,17 +80,26 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 	}
 	for _, r := range resources {
 		pathSlice := p.fieldSpec.PathSlice()
-		err := transform.MutateField(
-			r.Map(),
-			pathSlice,
-			false,
-			func(in interface{}) (interface{}, error) {
-				return p.searchAndReplace(in, isSecretDataTarget(r, pathSlice))
-			})
-		if err != nil {
-			p.logger.Printf("error executing transformers.MutateField(), error: %v\n", err)
-			return err
+		if p.fieldSpec.Path == "/" {
+			if newRootObject, err := p.searchAndReplace(r.Map(), false); err != nil {
+				p.logger.Printf("error executing transformers.MutateField(), error: %v\n", err)
+				return err
+			} else {
+				r.SetMap(newRootObject.(map[string]interface{}))
+			}
+		} else {
+			if err := transform.MutateField(
+				r.Map(),
+				pathSlice,
+				false,
+				func(in interface{}) (interface{}, error) {
+					return p.searchAndReplace(in, isSecretDataTarget(r, pathSlice))
+				}); err != nil {
+				p.logger.Printf("error executing transformers.MutateField(), error: %v\n", err)
+				return err
+			}
 		}
+
 	}
 	return nil
 }
