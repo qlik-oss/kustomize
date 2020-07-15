@@ -26,7 +26,7 @@ type remoteTargetSpec struct {
 // Getter is a function that can gets resource
 type remoteTargetGetter func(rs *remoteTargetSpec) error
 
-var goGetterMutex sync.Mutex
+var GoGetterMutex sync.Mutex
 
 func newLoaderAtGetter(raw string, fSys filesys.FileSystem, referrer *fileLoader, cloner git.Cloner, getter remoteTargetGetter) (ifc.Loader, error) {
 	rs := &remoteTargetSpec{
@@ -86,8 +86,8 @@ func getRemoteTarget(rs *remoteTargetSpec) error {
 		Options: opts,
 	}
 
-	goGetterMutex.Lock()
-	defer goGetterMutex.Unlock()
+	GoGetterMutex.Lock()
+	defer GoGetterMutex.Unlock()
 	return client.Get()
 }
 
