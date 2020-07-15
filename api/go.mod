@@ -12,6 +12,7 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.1.1
 	github.com/hairyhenderson/gomplate/v3 v3.6.0
+	github.com/hashicorp/go-getter v1.4.1
 	github.com/imdario/mergo v0.3.8
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.4.0
@@ -25,6 +26,7 @@ require (
 	k8s.io/kube-openapi v0.0.0-20191107075043-30be4d16710a
 	rsc.io/letsencrypt v0.0.3 // indirect
 	sigs.k8s.io/yaml v1.1.0
+	github.com/mholt/archiver/v3 v3.3.0
 )
 
 replace (
