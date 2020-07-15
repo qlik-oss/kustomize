@@ -42,6 +42,7 @@ const (
 	SuperSecret
 	ValuesFile
 	GitImageTag
+	GoGetter
 )
 
 var stringToBuiltinPluginTypeMap map[string]BuiltinPluginType
@@ -89,6 +90,9 @@ func init() {
 
 	TransformerFactories[GitImageTag] = builtins_qlik.NewGitImageTagPlugin
 	stringToBuiltinPluginTypeMap["GitImageTag"] = GitImageTag
+
+	GeneratorFactories[GoGetter] = builtins_qlik.NewGoGetterPlugin
+	stringToBuiltinPluginTypeMap["GoGetter"] = GoGetter
 }
 
 func makeStringToBuiltinPluginTypeMap() (result map[string]BuiltinPluginType) {
