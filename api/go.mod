@@ -14,6 +14,7 @@ require (
 	github.com/hairyhenderson/gomplate/v3 v3.6.0
 	github.com/hashicorp/go-getter v1.4.1
 	github.com/imdario/mergo v0.3.8
+	github.com/mholt/archiver/v3 v3.3.0
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.4.0
 	github.com/yujunz/go-getter v1.4.1-lite
@@ -24,10 +25,9 @@ require (
 	k8s.io/apimachinery v0.17.2
 	k8s.io/client-go v11.0.0+incompatible
 	k8s.io/kube-openapi v0.0.0-20191107075043-30be4d16710a
-	sigs.k8s.io/kustomize/kyaml v0.4.1
 	rsc.io/letsencrypt v0.0.3 // indirect
+	sigs.k8s.io/kustomize/kyaml v0.4.1
 	sigs.k8s.io/yaml v1.2.0
-	github.com/mholt/archiver/v3 v3.3.0
 )
 
 replace (
