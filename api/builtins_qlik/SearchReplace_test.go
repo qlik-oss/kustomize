@@ -26,6 +26,8 @@ func TestSearchReplacePlugin(t *testing.T) {
 		pluginInputResources string
 		checkAssertions      func(*testing.T, resmap.ResMap)
 		loaderRootDir        string
+		setup                func(*testing.T)
+		teardown             func(*testing.T)
 	}
 
 	testCases := []searchReplacePluginTestCaseT{
@@ -84,7 +86,7 @@ fooSpec:
 			},
 		},
 		{
-			name: "search replace env var",
+			name: "search replace with env var",
 			pluginConfig: `
 apiVersion: qlik.com/v1
 kind: SearchReplace
@@ -95,7 +97,7 @@ target:
  name: some-foo
 path: fooSpec/fooTemplate/fooContainers/env/value
 search: far
-replaceEnvVar: TEST_ENV_VAR
+replaceWithEnvVar: TEST_ENV_VAR
 `,
 			pluginInputResources: `
 apiVersion: qlik.com/v1
@@ -110,6 +112,12 @@ fooSpec:
      - name: FOO
        value: far
 `,
+			setup: func(t *testing.T) {
+				os.Setenv("TEST_ENV_VAR", "not far")
+			},
+			teardown: func(t *testing.T) {
+				os.Unsetenv("TEST_ENV_VAR")
+			},
 			checkAssertions: func(t *testing.T, resMap resmap.ResMap) {
 				res := resMap.GetByIndex(0)
 				envVars, err := res.GetFieldValue("fooSpec.fooTemplate.fooContainers[0].env")
@@ -1105,7 +1113,6 @@ fooSpec:
 			}
 		}(),
 	}
-	os.Setenv("TEST_ENV_VAR", "not far")
 	plugin := SearchReplacePlugin{logger: utils.GetLogger("SearchReplacePlugin")}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -1131,8 +1138,16 @@ fooSpec:
 				t.Fatalf("Err: %v", err)
 			}
 
+			if testCase.setup != nil {
+				testCase.setup(t)
+			}
+
 			if err := plugin.Transform(resMap); err != nil {
 				t.Fatalf("Err: %v", err)
+			}
+
+			if testCase.teardown != nil {
+				testCase.teardown(t)
 			}
 
 			for _, res := range resMap.Resources() {
