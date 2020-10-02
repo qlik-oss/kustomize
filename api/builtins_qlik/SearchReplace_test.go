@@ -84,6 +84,49 @@ fooSpec:
 			},
 		},
 		{
+			name: "search replace env var",
+			pluginConfig: `
+apiVersion: qlik.com/v1
+kind: SearchReplace
+metadata:
+ name: notImportantHere
+target:
+ kind: Foo
+ name: some-foo
+path: fooSpec/fooTemplate/fooContainers/env/value
+search: far
+replaceEnvVar: TEST_ENV_VAR
+`,
+			pluginInputResources: `
+apiVersion: qlik.com/v1
+kind: Foo
+metadata:
+ name: some-foo
+fooSpec:
+ fooTemplate:
+   fooContainers:
+   - name: have-env
+     env:
+     - name: FOO
+       value: far
+`,
+			checkAssertions: func(t *testing.T, resMap resmap.ResMap) {
+				res := resMap.GetByIndex(0)
+				envVars, err := res.GetFieldValue("fooSpec.fooTemplate.fooContainers[0].env")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+
+				fooEnvVar := envVars.([]interface{})[0].(map[string]interface{})
+				if "FOO" != fooEnvVar["name"].(string) {
+					t.Fatalf("unexpected: %v\n", fooEnvVar["name"].(string))
+				}
+				if "not far" != fooEnvVar["value"].(string) {
+					t.Fatalf("unexpected: %v\n", fooEnvVar["value"].(string))
+				}
+			},
+		},
+		{
 			name: "strict is safer",
 			pluginConfig: `
 apiVersion: qlik.com/v1
@@ -1062,6 +1105,7 @@ fooSpec:
 			}
 		}(),
 	}
+	os.Setenv("TEST_ENV_VAR", "not far")
 	plugin := SearchReplacePlugin{logger: utils.GetLogger("SearchReplacePlugin")}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

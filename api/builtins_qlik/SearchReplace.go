@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"strings"
 
@@ -30,6 +31,7 @@ type SearchReplacePlugin struct {
 	Path                    string                    `json:"path,omitempty" yaml:"path,omitempty"`
 	Search                  string                    `json:"search,omitempty" yaml:"search,omitempty"`
 	Replace                 string                    `json:"replace,omitempty" yaml:"replace,omitempty"`
+	ReplaceEnvVar           string                    `json:"replaceEnvVar,omitempty" yaml:"replaceEnvVar,omitempty"`
 	ReplaceWithObjRef       *types.Var                `json:"replaceWithObjRef,omitempty" yaml:"replaceWithObjRef,omitempty"`
 	ReplaceWithGitSemverTag *ReplaceWithGitSemverTagT `json:"replaceWithGitSemverTag,omitempty" yaml:"replaceWithGitSemverTag,omitempty"`
 	logger                  *log.Logger
@@ -43,6 +45,7 @@ func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err err
 	p.Path = ""
 	p.Search = ""
 	p.Replace = ""
+	p.ReplaceEnvVar = ""
 	p.ReplaceWithObjRef = nil
 	p.ReplaceWithGitSemverTag = nil
 	err = yaml.Unmarshal(c, p)
@@ -73,6 +76,7 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 		p.logger.Printf("error selecting resources based on the target selector, error: %v\n", err)
 		return err
 	}
+
 	if p.Replace == "" {
 		if p.ReplaceWithObjRef != nil {
 			var replaceEmpty bool
@@ -97,6 +101,8 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 			} else {
 				p.Replace = strings.TrimPrefix(gitVersionTag, "v")
 			}
+		} else if len(p.ReplaceEnvVar) > 0 {
+			p.Replace = os.Getenv(p.ReplaceEnvVar)
 		}
 	}
 	for _, r := range resources {
