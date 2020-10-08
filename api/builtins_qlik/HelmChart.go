@@ -638,11 +638,11 @@ func getRepoFileEntries(settings *cli.EnvSettings) ([]*repo.Entry, error) {
 
 func (p *HelmChartPlugin) getRepoEntryForAliasedDependency(aliasMarker string, dep *chart.Dependency, c *chart.Chart) (*repo.Entry, error) {
 	repoEntryName := strings.TrimPrefix(dep.Repository, aliasMarker)
-	var repoEntryUrl string
 	if c.Lock == nil {
 		return nil, fmt.Errorf(`cannot find lock file for subchart: %v, repo alias: %v for %v.
 Run 'helm dep update' in %v`, dep.Name, repoEntryName, p.ChartName, filepath.Join(p.ChartHome, p.ChartName))
 	}
+	repoEntryUrl := getRepoUrlFromChartLock(c.Lock, dep.Name)
 	if repoEntryUrl == "" {
 		return nil, fmt.Errorf("cannot find URL for dependency: %v, alias: %v", dep.Name, repoEntryName)
 	} else {
