@@ -2,10 +2,12 @@ package builtins_qlik
 
 import (
 	"context"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/hashicorp/go-getter"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
@@ -75,14 +77,30 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 	}
 	loader.GoGetterMutex.Lock()
 	// In case it was an update (slighty inefficient but easy)
+	// Second time is not a full clone
 	// go getter doesn't do --tags so we can "fake it"
-	cmd := exec.Command("git", "config", "-f", filepath.Join(dir, ".git", "config"), "--add", "remote.origin.fetch", "+refs/tags/*:refs/tags/*")
-	cmd.Stderr = os.Stderr
-	cmd.Run()
+	if _, err := os.Stat(dir); err != nil {
+		// First Time
+		if os.IsNotExist(err) {
+			err = client.Get()
+		}
+	}
+	// read the whole file at once
+	b, err := ioutil.ReadFile(filepath.Join(dir, ".git", "config"))
+	if err != nil {
+		p.logger.Printf("error git config file: %v, error: %v\n", filepath.Join(dir, ".git", "config"), err)
+		return nil, err
+	}
+	if !strings.Contains(string(b), "+refs/tags/*:refs/tags/*") {
+		cmd := exec.Command("git", "config", "-f", filepath.Join(dir, ".git", "config"), "--add", "remote.origin.fetch", "+refs/tags/*:refs/tags/*")
+		cmd.Stderr = os.Stderr
+		cmd.Run()
+	}
 	err = client.Get()
-	cmd = exec.Command("git", "config", "-f", filepath.Join(dir, ".git", "config"), "--unset", "remote.origin.fetch", `\+refs\/tags\/\*\:refs\/tags\/\*`)
-	cmd.Stderr = os.Stderr
-	cmd.Run()
+	// Since we are checking for existance we should not need
+	// cmd := exec.Command("git", "config", "-f", filepath.Join(dir, ".git", "config"), "--unset", "remote.origin.fetch", `\+refs\/tags\/\*\:refs\/tags\/\*`)
+	// cmd.Stderr = os.Stderr
+	// cmd.Run()
 	loader.GoGetterMutex.Unlock()
 
 	if err != nil {
@@ -103,7 +121,7 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 		p.logger.Printf("Error: Unable to set working dir %v: %v\n", dir, err)
 		return nil, err
 	}
-	cmd = exec.Command(currentExe, "build", ".")
+	cmd := exec.Command(currentExe, "build", ".")
 	cmd.Stderr = os.Stderr
 	kustomizedYaml, err := cmd.Output()
 	if err != nil {
