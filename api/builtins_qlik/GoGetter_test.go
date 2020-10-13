@@ -74,9 +74,9 @@ configMapGenerator:
   - foo=bar
 `), os.ModePerm); err != nil {
 				t.Fatalf("unexpected error: %v", err)
-			} else if _, err := execCmd(path.Join(tmpDir, "foo"), "git", "add", "kustomization.yaml"); err != nil {
+			} else if _, err := execCmd(path.Join(tmpDir, "foo"), "git", "add", "."); err != nil {
 				t.Fatalf("unexpected error: %v", err)
-			} else if _, err := execCmd(path.Join(tmpDir, "foo"), "git", "commit", "-am", "First commit"); err != nil {
+			} else if _, err := execCmd(path.Join(tmpDir, "foo"), "git", "commit", "-m", "First commit"); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			} else if _, err := execCmd(path.Join(tmpDir, "foo"), "git", "push", "origin", "master"); err != nil {
 				t.Fatalf("unexpected error: %v", err)
