@@ -63,9 +63,9 @@ func Test_GoGetter(t *testing.T) {
 
 			if _, err := execCmd(tmpDir, "git", "clone", fmt.Sprintf("%s/foo.git", gitServer.URL), "foo"); err != nil {
 				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if err := ioutil.WriteFile(path.Join(tmpDir, "foo", "kustomization.yaml"), []byte(`
+			} else if _, err := execCmd(path.Join(tmpDir, "foo"), "git", "config", "user.email", "you@example.com"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			} else if err := ioutil.WriteFile(path.Join(tmpDir, "foo", "kustomization.yaml"), []byte(`
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
