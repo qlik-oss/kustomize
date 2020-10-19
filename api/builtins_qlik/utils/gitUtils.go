@@ -2,7 +2,9 @@ package utils
 
 import (
 	"fmt"
+	"os/exec"
 	"sort"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/go-git/go-git/v5"
@@ -61,4 +63,16 @@ func GetHighestSemverGitTagForHead(dir string, defaultSemver string) (string, er
 		}
 	}
 	return latestSemverTag, nil
+}
+
+// GetGitDescribeForHead returns tag/version from a git repository based on HEAD
+func GetGitDescribeForHead(dir string) (string, error) {
+	out, err := exec.Command("git", "-C", dir, "describe", "--tags", "--abbrev=7", "--match", "v*").Output()
+	if err != nil {
+		return "", err
+	}
+
+	tag := strings.TrimSpace(string(out))
+
+	return string(tag), nil
 }
