@@ -22,7 +22,7 @@ import (
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
 )
 
-func Test_ImageGitTag_getHighestSemverGitTagForHead(t *testing.T) {
+func Test_ImageGitTag_getGitDescribeForHead(t *testing.T) {
 	type tcT struct {
 		name     string
 		dir      string
@@ -30,29 +30,6 @@ func Test_ImageGitTag_getHighestSemverGitTagForHead(t *testing.T) {
 	}
 
 	testCases := []*tcT{
-		func() *tcT {
-			tmpDir, err := ioutil.TempDir("", "")
-			if err != nil {
-				t.Fatalf("unexpected error: %v\n", err)
-			}
-
-			subDir, shortGitRef, err := setupGitDirWithSubdir(tmpDir, []string{"foobar"}, []string{"foo-tag"})
-			if err != nil {
-				t.Fatalf("unexpected error: %v\n", err)
-			}
-
-			return &tcT{
-				name: "no semver tags",
-				dir:  subDir,
-				validate: func(t *testing.T, tag string) {
-					expected := fmt.Sprintf("v0.0.0-%v", shortGitRef)
-					if tag != expected {
-						t.Fatalf("expected: %v, but got: %v\n", expected, tag)
-					}
-					_ = os.RemoveAll(tmpDir)
-				},
-			}
-		}(),
 		func() *tcT {
 			tmpDir, err := ioutil.TempDir("", "")
 			if err != nil {
@@ -69,7 +46,7 @@ func Test_ImageGitTag_getHighestSemverGitTagForHead(t *testing.T) {
 				name: "semver tag before head",
 				dir:  subDir,
 				validate: func(t *testing.T, tag string) {
-					expected := fmt.Sprintf("%v-%v", semverTag, shortGitRef)
+					expected := fmt.Sprintf("%v-1-g%v", strings.TrimPrefix(semverTag, "v"), shortGitRef)
 					if tag != expected {
 						t.Fatalf("expected: %v, but got: %v\n", expected, tag)
 					}
@@ -93,7 +70,7 @@ func Test_ImageGitTag_getHighestSemverGitTagForHead(t *testing.T) {
 				name: "semver tag on head",
 				dir:  subDir,
 				validate: func(t *testing.T, tag string) {
-					if tag != semverTag {
+					if tag != strings.TrimPrefix(semverTag, "v") {
 						t.Fatalf("expected: %v, but got: %v\n", semverTag, tag)
 					}
 					_ = os.RemoveAll(tmpDir)
@@ -106,18 +83,18 @@ func Test_ImageGitTag_getHighestSemverGitTagForHead(t *testing.T) {
 				t.Fatalf("unexpected error: %v\n", err)
 			}
 
-			highestSemverTag := "v100.0.0-beta"
-			subDir, _, err := setupGitDirWithSubdir(tmpDir, []string{"foo", "v1.0.0", "bar", highestSemverTag, "baz", "v0.0.1", "boo", "v100.0.0-alpha"}, []string{})
+			semverTag := "v1.2.3"
+			subDir, _, err := setupGitDirWithSubdir(tmpDir, []string{"foo", "bar", semverTag}, []string{"v1.2.1"})
 			if err != nil {
 				t.Fatalf("unexpected error: %v\n", err)
 			}
 
 			return &tcT{
-				name: "highest semver tag",
+				name: "first semver tag",
 				dir:  subDir,
 				validate: func(t *testing.T, tag string) {
-					if tag != highestSemverTag {
-						t.Fatalf("expected: %v, but got: %v\n", highestSemverTag, tag)
+					if tag != strings.TrimPrefix(semverTag, "v") {
+						t.Fatalf("expected: %v, but got: %v\n", semverTag, tag)
 					}
 					_ = os.RemoveAll(tmpDir)
 				},
@@ -126,7 +103,7 @@ func Test_ImageGitTag_getHighestSemverGitTagForHead(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			tag, err := utils.GetHighestSemverGitTagForHead(testCase.dir, "v0.0.0")
+			tag, err := utils.GetGitDescribeForHead(testCase.dir)
 			if err != nil {
 				t.Fatalf("unexpected error: %v\n", err)
 			}
@@ -182,7 +159,7 @@ func setupGitDirWithSubdir(tmpDir string, headTags []string, intermediateTags []
 		}
 	}
 
-	if shortGitRefBytes, err := execCmd(tmpDir, "git", "rev-parse", "--short", "HEAD"); err != nil {
+	if shortGitRefBytes, err := execCmd(tmpDir, "git", "rev-parse", "--short=7", "HEAD"); err != nil {
 		return "", "", err
 	} else {
 		return barDir, string(bytes.TrimSpace(shortGitRefBytes)), nil

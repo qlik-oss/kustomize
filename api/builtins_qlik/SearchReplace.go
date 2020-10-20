@@ -21,19 +21,14 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-type ReplaceWithGitSemverTagT struct {
-	Default string `json:"default,omitempty" yaml:"default,omitempty"`
-}
-
 type SearchReplacePlugin struct {
-	Target                    *types.Selector           `json:"target,omitempty" yaml:"target,omitempty"`
-	Path                      string                    `json:"path,omitempty" yaml:"path,omitempty"`
-	Search                    string                    `json:"search,omitempty" yaml:"search,omitempty"`
-	Replace                   string                    `json:"replace,omitempty" yaml:"replace,omitempty"`
-	ReplaceWithEnvVar         string                    `json:"replaceWithEnvVar,omitempty" yaml:"replaceWithEnvVar,omitempty"`
-	ReplaceWithObjRef         *types.Var                `json:"replaceWithObjRef,omitempty" yaml:"replaceWithObjRef,omitempty"`
-	ReplaceWithGitSemverTag   *ReplaceWithGitSemverTagT `json:"replaceWithGitSemverTag,omitempty" yaml:"replaceWithGitSemverTag,omitempty"`
-	ReplaceWithGitDescribeTag bool                      `json:"replaceWithGitDescribeTag,omitempty" yaml:"replaceWithGitDescribeTag,omitempty"`
+	Target                    *types.Selector `json:"target,omitempty" yaml:"target,omitempty"`
+	Path                      string          `json:"path,omitempty" yaml:"path,omitempty"`
+	Search                    string          `json:"search,omitempty" yaml:"search,omitempty"`
+	Replace                   string          `json:"replace,omitempty" yaml:"replace,omitempty"`
+	ReplaceWithEnvVar         string          `json:"replaceWithEnvVar,omitempty" yaml:"replaceWithEnvVar,omitempty"`
+	ReplaceWithObjRef         *types.Var      `json:"replaceWithObjRef,omitempty" yaml:"replaceWithObjRef,omitempty"`
+	ReplaceWithGitDescribeTag bool            `json:"replaceWithGitDescribeTag,omitempty" yaml:"replaceWithGitDescribeTag,omitempty"`
 	logger                    *log.Logger
 	fieldSpec                 types.FieldSpec
 	re                        *regexp.Regexp
@@ -47,7 +42,6 @@ func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err err
 	p.Replace = ""
 	p.ReplaceWithEnvVar = ""
 	p.ReplaceWithObjRef = nil
-	p.ReplaceWithGitSemverTag = nil
 	p.ReplaceWithGitDescribeTag = false
 	err = yaml.Unmarshal(c, p)
 	if err != nil {
@@ -95,12 +89,6 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 			if p.Replace == "" && !replaceEmpty {
 				p.logger.Printf("Object Reference could not be found")
 				return nil
-			}
-		} else if p.ReplaceWithGitSemverTag != nil {
-			if gitVersionTag, err := utils.GetHighestSemverGitTagForHead(p.pwd, p.ReplaceWithGitSemverTag.Default); err != nil {
-				return err
-			} else {
-				p.Replace = strings.TrimPrefix(gitVersionTag, "v")
 			}
 		} else if p.ReplaceWithGitDescribeTag {
 			if gitDescribeTag, err := utils.GetGitDescribeForHead(p.pwd); err != nil {
