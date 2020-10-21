@@ -83,8 +83,8 @@ func Test_ImageGitTag_getGitDescribeForHead(t *testing.T) {
 				t.Fatalf("unexpected error: %v\n", err)
 			}
 
-			semverTag := "v1.2.3"
-			subDir, _, err := setupGitDirWithSubdir(tmpDir, []string{"foo", "bar", semverTag}, []string{"v1.2.1"})
+			semverTag := "v1.20.30"
+			subDir, _, err := setupGitDirWithSubdir(tmpDir, []string{"foo", "bar", semverTag, "v4.0.0-beta"}, []string{"v1.2.1"})
 			if err != nil {
 				t.Fatalf("unexpected error: %v\n", err)
 			}
@@ -248,7 +248,7 @@ images:
 				pluginInputResources: pluginInputResources,
 				loaderRootDir:        subDir,
 				checkAssertions: func(t *testing.T, resMap resmap.ResMap) {
-					expectedTag := fmt.Sprintf("v0.0.0-%v", hash)
+					expectedTag := fmt.Sprintf("v0.0.0-0-g%v", hash)
 					version := strings.TrimPrefix(expectedTag, "v")
 					expected := fmt.Sprintf(outputResourcesTemplate, version, version, version, version)
 
@@ -287,7 +287,7 @@ images:
 				pluginInputResources: pluginInputResources,
 				loaderRootDir:        subDir,
 				checkAssertions: func(t *testing.T, resMap resmap.ResMap) {
-					version := strings.TrimPrefix(fmt.Sprintf("%v-%v", semverTag, hash), "v")
+					version := strings.TrimPrefix(fmt.Sprintf("%v-1-g%v", semverTag, hash), "v")
 					expected := fmt.Sprintf(outputResourcesTemplate, version, version, version, version)
 
 					actual, err := resMap.AsYaml()
@@ -307,7 +307,7 @@ images:
 			}
 
 			semverTag := "v1.0.2"
-			subDir, _, err := setupGitDirWithSubdir(tmpDir, []string{semverTag, "v0.0.2"}, []string{"foo", "v0.0.1", "bar"})
+			subDir, _, err := setupGitDirWithSubdir(tmpDir, []string{semverTag}, []string{"foo", "v0.0.1", "bar"})
 			if err != nil {
 				t.Fatalf("unexpected error: %v\n", err)
 			}
@@ -344,8 +344,8 @@ images:
 				t.Fatalf("unexpected error: %v\n", err)
 			}
 
-			highestSemverTag := "5.0.0"
-			subDir, _, err := setupGitDirWithSubdir(tmpDir, []string{"1.0.0", highestSemverTag, "bar", "2.0.0"}, []string{"foo", "v0.0.1"})
+			highestSemverTag := "v5.0.0"
+			subDir, _, err := setupGitDirWithSubdir(tmpDir, []string{highestSemverTag, "bar"}, []string{"foo", "v0.0.1"})
 			if err != nil {
 				t.Fatalf("unexpected error: %v\n", err)
 			}
