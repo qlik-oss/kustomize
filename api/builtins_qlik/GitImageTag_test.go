@@ -100,10 +100,52 @@ func Test_ImageGitTag_getGitDescribeForHead(t *testing.T) {
 				},
 			}
 		}(),
+		func() *tcT {
+			tmpDir, err := ioutil.TempDir("", "")
+			if err != nil {
+				t.Fatalf("unexpected error: %v\n", err)
+			}
+
+			semverTag := "0.0.0"
+			subDir, shortGitRef, err := setupGitDirWithSubdir(tmpDir, []string{}, []string{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v\n", err)
+			}
+
+			return &tcT{
+				name: "no tags",
+				dir:  subDir,
+				validate: func(t *testing.T, tag string) {
+					expected := fmt.Sprintf("%v-0-g%v", strings.TrimPrefix(semverTag, "v"), shortGitRef)
+					if tag != expected {
+						t.Fatalf("expected: %v, but got: %v\n", expected, tag)
+					}
+					_ = os.RemoveAll(tmpDir)
+				},
+			}
+		}(),
+		func() *tcT {
+			tmpDir, err := ioutil.TempDir("", "")
+			if err != nil {
+				t.Fatalf("unexpected error: %v\n", err)
+			}
+
+			return &tcT{
+				name: "non git folder",
+				dir:  tmpDir,
+				validate: func(t *testing.T, tag string) {
+					expected := "9.9.9"
+					if tag != expected {
+						t.Fatalf("expected: %v, but got: %v\n", expected, tag)
+					}
+					_ = os.RemoveAll(tmpDir)
+				},
+			}
+		}(),
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			tag, err := utils.GetGitDescribeForHead(testCase.dir)
+			tag, err := utils.GetGitDescribeForHead(testCase.dir, "9.9.9")
 			if err != nil {
 				t.Fatalf("unexpected error: %v\n", err)
 			}

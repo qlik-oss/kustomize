@@ -21,14 +21,18 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+type ReplaceWithGitDescribeTagT struct {
+	Default string `json:"default,omitempty" yaml:"default,omitempty"`
+}
+
 type SearchReplacePlugin struct {
-	Target                    *types.Selector `json:"target,omitempty" yaml:"target,omitempty"`
-	Path                      string          `json:"path,omitempty" yaml:"path,omitempty"`
-	Search                    string          `json:"search,omitempty" yaml:"search,omitempty"`
-	Replace                   string          `json:"replace,omitempty" yaml:"replace,omitempty"`
-	ReplaceWithEnvVar         string          `json:"replaceWithEnvVar,omitempty" yaml:"replaceWithEnvVar,omitempty"`
-	ReplaceWithObjRef         *types.Var      `json:"replaceWithObjRef,omitempty" yaml:"replaceWithObjRef,omitempty"`
-	ReplaceWithGitDescribeTag bool            `json:"replaceWithGitDescribeTag,omitempty" yaml:"replaceWithGitDescribeTag,omitempty"`
+	Target                    *types.Selector             `json:"target,omitempty" yaml:"target,omitempty"`
+	Path                      string                      `json:"path,omitempty" yaml:"path,omitempty"`
+	Search                    string                      `json:"search,omitempty" yaml:"search,omitempty"`
+	Replace                   string                      `json:"replace,omitempty" yaml:"replace,omitempty"`
+	ReplaceWithEnvVar         string                      `json:"replaceWithEnvVar,omitempty" yaml:"replaceWithEnvVar,omitempty"`
+	ReplaceWithObjRef         *types.Var                  `json:"replaceWithObjRef,omitempty" yaml:"replaceWithObjRef,omitempty"`
+	ReplaceWithGitDescribeTag *ReplaceWithGitDescribeTagT `json:"replaceWithGitDescribeTag,omitempty" yaml:"replaceWithGitDescribeTag,omitempty"`
 	logger                    *log.Logger
 	fieldSpec                 types.FieldSpec
 	re                        *regexp.Regexp
@@ -42,7 +46,7 @@ func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err err
 	p.Replace = ""
 	p.ReplaceWithEnvVar = ""
 	p.ReplaceWithObjRef = nil
-	p.ReplaceWithGitDescribeTag = false
+	p.ReplaceWithGitDescribeTag = nil
 	err = yaml.Unmarshal(c, p)
 	if err != nil {
 		p.logger.Printf("error unmarshalling config from yaml, error: %v\n", err)
@@ -90,8 +94,8 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 				p.logger.Printf("Object Reference could not be found")
 				return nil
 			}
-		} else if p.ReplaceWithGitDescribeTag {
-			if gitDescribeTag, err := utils.GetGitDescribeForHead(p.pwd); err != nil {
+		} else if p.ReplaceWithGitDescribeTag != nil {
+			if gitDescribeTag, err := utils.GetGitDescribeForHead(p.pwd, p.ReplaceWithGitDescribeTag.Default); err != nil {
 				return err
 			} else {
 				p.Replace = strings.TrimPrefix(gitDescribeTag, "v")

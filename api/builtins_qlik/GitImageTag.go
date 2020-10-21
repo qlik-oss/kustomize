@@ -27,7 +27,7 @@ func (p *GitImageTagPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error
 }
 
 func (p *GitImageTagPlugin) Transform(m resmap.ResMap) error {
-	if gitVersionTag, err := utils.GetGitDescribeForHead(p.pwd); err != nil {
+	if gitVersionTag, err := utils.GetGitDescribeForHead(p.pwd, ""); err != nil {
 		return err
 	} else {
 		for _, image := range p.Images {

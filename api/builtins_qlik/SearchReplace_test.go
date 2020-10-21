@@ -1065,7 +1065,8 @@ target:
   name: some-foo
 path: /
 search: \$\(VERSION\)
-replaceWithGitDescribeTag: true
+replaceWithGitDescribeTag:
+  default: 0.0.0
 `,
 				pluginInputResources: `
 apiVersion: qlik.com/v1
