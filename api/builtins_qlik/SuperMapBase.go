@@ -24,7 +24,7 @@ type IDecorator interface {
 	GetNamespace() string
 	SetNamespace(namespace string)
 	GetType() string
-	GetConfigData() map[string]string
+	GetConfigData() map[string]interface{}
 	ShouldBase64EncodeConfigData() bool
 	GetDisableNameSuffixHash() bool
 	Generate() (resmap.ResMap, error)
@@ -184,7 +184,7 @@ func (b *SuperMapPluginBase) generateNameWithHash(res *resource.Resource) (strin
 	return fmt.Sprintf("%s-%s", res.GetName(), hash), nil
 }
 
-func (b *SuperMapPluginBase) appendData(res *resource.Resource, data map[string]string, straightCopy bool) error {
+func (b *SuperMapPluginBase) appendData(res *resource.Resource, data map[string]interface{}, straightCopy bool) error {
 	if err := filtersutil.ApplyToJSON(kio.FilterFunc(func(nodes []*kyaml.RNode) ([]*kyaml.RNode, error) {
 		return kio.FilterAll(kyaml.FilterFunc(func(rn *kyaml.RNode) (*kyaml.RNode, error) {
 			if dataRn, err := rn.Pipe(kyaml.FieldMatcher{Name: "data"}); err != nil {
@@ -203,11 +203,12 @@ func (b *SuperMapPluginBase) appendData(res *resource.Resource, data map[string]
 				}
 
 				for k, v := range data {
-					var val string
-					if !straightCopy && b.Decorator.ShouldBase64EncodeConfigData() {
-						val = base64.StdEncoding.EncodeToString([]byte(v))
-					} else {
-						val = v
+					var val interface{}
+					val = v
+					if _, ok := v.(string); ok {
+						if !straightCopy && b.Decorator.ShouldBase64EncodeConfigData() {
+							val = base64.StdEncoding.EncodeToString([]byte(v.(string)))
+						}
 					}
 					dataRnMap[k] = val
 				}

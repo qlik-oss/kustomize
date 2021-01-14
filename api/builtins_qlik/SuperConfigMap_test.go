@@ -46,7 +46,44 @@ spec:
 		pluginConfig         string
 		pluginInputResources string
 		checkAssertions      func(*testing.T, resmap.ResMap)
-	}{
+	}{{
+		name: "withoutHash_withAppendInteger",
+		pluginConfig: `
+apiVersion: qlik.com/v1
+kind: SuperConfigMap
+metadata:
+  name: my-config-map
+options:
+  disableNameSuffixHash: true
+data:
+  intValue: 1234
+`,
+		pluginInputResources: pluginInputResources,
+		checkAssertions: func(t *testing.T, resMap resmap.ResMap) {
+			foundConfigMapResource := false
+			for _, res := range resMap.Resources() {
+				if res.GetKind() == "ConfigMap" {
+					foundConfigMapResource = true
+					assert.Equal(t, "my-config-map", res.GetName())
+					assert.False(t, res.NeedHashSuffix())
+
+					data, err := res.GetFieldValue("data")
+					assert.NoError(t, err)
+					assert.True(t, len(data.(map[string]interface{})) == 2)
+
+					value, err := res.GetFieldValue("data.foo")
+					assert.NoError(t, err)
+					assert.Equal(t, "bar", value)
+
+					intValue, err := res.GetFieldValue("data.intValue")
+					assert.NoError(t, err)
+					assert.Equal(t, int64(1234), intValue)
+					break
+				}
+			}
+			assert.True(t, foundConfigMapResource)
+		},
+	},
 		{
 			name: "withoutHash_withoutAppendData",
 			pluginConfig: `

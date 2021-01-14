@@ -15,7 +15,7 @@ import (
 type SuperSecretPlugin struct {
 	StringData          map[string]string `json:"stringData,omitempty" yaml:"stringData,omitempty"`
 	Data                map[string]string `json:"data,omitempty" yaml:"data,omitempty"`
-	aggregateConfigData map[string]string
+	aggregateConfigData map[string]interface{}
 	logger              *log.Logger
 	builtins.SecretGeneratorPlugin
 	SuperMapPluginBase
@@ -43,8 +43,8 @@ func (p *SuperSecretPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error
 	return p.SecretGeneratorPlugin.Config(h, c)
 }
 
-func (p *SuperSecretPlugin) getAggregateConfigData() (map[string]string, error) {
-	aggregateConfigData := make(map[string]string)
+func (p *SuperSecretPlugin) getAggregateConfigData() (map[string]interface{}, error) {
+	aggregateConfigData := make(map[string]interface{})
 	for k, v := range p.StringData {
 		aggregateConfigData[k] = v
 	}
@@ -91,7 +91,7 @@ func (p *SuperSecretPlugin) GetType() string {
 	return "Secret"
 }
 
-func (p *SuperSecretPlugin) GetConfigData() map[string]string {
+func (p *SuperSecretPlugin) GetConfigData() map[string]interface{} {
 	return p.aggregateConfigData
 }
 
