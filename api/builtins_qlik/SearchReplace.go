@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -34,6 +35,7 @@ type SearchReplacePlugin struct {
 	ReplaceWithEnvVar         string                      `json:"replaceWithEnvVar,omitempty" yaml:"replaceWithEnvVar,omitempty"`
 	ReplaceWithObjRef         *types.Var                  `json:"replaceWithObjRef,omitempty" yaml:"replaceWithObjRef,omitempty"`
 	ReplaceWithGitDescribeTag *ReplaceWithGitDescribeTagT `json:"replaceWithGitDescribeTag,omitempty" yaml:"replaceWithGitDescribeTag,omitempty"`
+	ReplaceType               string                      `json:"replaceType,omitempty" yaml:"replaceType,omitempty"`
 	logger                    *log.Logger
 	fieldSpec                 types.FieldSpec
 	re                        *regexp.Regexp
@@ -47,6 +49,7 @@ func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err err
 	p.Search = ""
 	p.Replace = ""
 	p.replaceStr = ""
+	p.ReplaceType = ""
 	p.ReplaceWithEnvVar = ""
 	p.ReplaceWithObjRef = nil
 	p.ReplaceWithGitDescribeTag = nil
@@ -217,28 +220,29 @@ func (p *SearchReplacePlugin) searchAndReplaceRNode(node *kyaml.RNode, base64Enc
 	}
 	if changed != nil {
 		if strChanged, ok := changed.(string); ok {
-			if strChanged == p.replaceStr {
-				switch p.Replace.(type) {
-				case int64:
-					node.YNode().Value = strChanged
-					node.YNode().Tag = kyaml.NodeTagInt
-					node.YNode().Style = 0
-				case bool:
-					node.YNode().Value = strChanged
-					node.YNode().Tag = kyaml.NodeTagBool
-					node.YNode().Style = 0
-				case float64:
-					node.YNode().Value = strChanged
-					node.YNode().Tag = kyaml.NodeTagFloat
-					node.YNode().Style = 0
-				default:
-					node.YNode().Value = strChanged
-					node.YNode().Tag = kyaml.NodeTagString
+			var targetType = "string"
+			if p.ReplaceType == "" {
+				if strChanged == p.replaceStr {
+					targetType = reflect.TypeOf(p.Replace).String()
 				}
 			} else {
+				targetType = p.ReplaceType
+			}
+			switch targetType {
+			case "int64":
+				node.YNode().Value = strChanged
+				node.YNode().Tag = kyaml.NodeTagInt
+			case "bool":
+				node.YNode().Value = strChanged
+				node.YNode().Tag = kyaml.NodeTagBool
+			case "float64":
+				node.YNode().Value = strChanged
+				node.YNode().Tag = kyaml.NodeTagFloat
+			default:
 				node.YNode().Value = strChanged
 				node.YNode().Tag = kyaml.NodeTagString
 			}
+			node.YNode().Style = 0
 		} else {
 			tempMap := map[string]interface{}{"tmp": changed}
 			if tempMapRNode, err := utils.NewKyamlRNode(tempMap); err != nil {
