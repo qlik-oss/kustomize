@@ -15,3 +15,12 @@ make qlik-build-all
 ```bash
 ./kustomize build .
 ```
+
+## How To Release
+
+To release please use this method only. Dont publish release from UI, that breaks some tests.
+
+```console
+git tag qlik/v*.*.*
+git push origin qlik/v*.*.*
+```
