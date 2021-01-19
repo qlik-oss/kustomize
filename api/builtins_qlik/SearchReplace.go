@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
@@ -29,14 +31,16 @@ type SearchReplacePlugin struct {
 	Target                    *types.Selector             `json:"target,omitempty" yaml:"target,omitempty"`
 	Path                      string                      `json:"path,omitempty" yaml:"path,omitempty"`
 	Search                    string                      `json:"search,omitempty" yaml:"search,omitempty"`
-	Replace                   string                      `json:"replace,omitempty" yaml:"replace,omitempty"`
+	Replace                   interface{}                 `json:"replace,omitempty" yaml:"replace,omitempty"`
 	ReplaceWithEnvVar         string                      `json:"replaceWithEnvVar,omitempty" yaml:"replaceWithEnvVar,omitempty"`
 	ReplaceWithObjRef         *types.Var                  `json:"replaceWithObjRef,omitempty" yaml:"replaceWithObjRef,omitempty"`
 	ReplaceWithGitDescribeTag *ReplaceWithGitDescribeTagT `json:"replaceWithGitDescribeTag,omitempty" yaml:"replaceWithGitDescribeTag,omitempty"`
+	ReplaceType               string                      `json:"replaceType,omitempty" yaml:"replaceType,omitempty"`
 	logger                    *log.Logger
 	fieldSpec                 types.FieldSpec
 	re                        *regexp.Regexp
 	pwd                       string
+	replaceStr                string
 }
 
 func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
@@ -44,6 +48,8 @@ func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err err
 	p.Path = ""
 	p.Search = ""
 	p.Replace = ""
+	p.replaceStr = ""
+	p.ReplaceType = ""
 	p.ReplaceWithEnvVar = ""
 	p.ReplaceWithObjRef = nil
 	p.ReplaceWithGitDescribeTag = nil
@@ -75,22 +81,36 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 		p.logger.Printf("error selecting resources based on the target selector, error: %v\n", err)
 		return err
 	}
-
-	if p.Replace == "" {
+	if p.Replace != "" {
+		switch newValue := p.Replace.(type) {
+		case int64:
+			p.replaceStr = strconv.FormatInt(newValue, 10)
+		case bool:
+			p.replaceStr = strconv.FormatBool(newValue)
+		case float64:
+			p.replaceStr = strconv.FormatFloat(newValue, 'f', -1, 64)
+		case string:
+			p.replaceStr = newValue
+		default:
+			return errors.New("Replacement input value of unknown type")
+		}
+	}
+	if p.replaceStr == "" {
 		if p.ReplaceWithObjRef != nil {
 			var replaceEmpty bool
 			for _, res := range m.Resources() {
 				if p.matchesObjRef(res) {
-					if replacementValue, err := getReplacementValue(res, p.ReplaceWithObjRef.FieldRef.FieldPath); err != nil {
+					if replacementValue, replace, err := getReplacementValue(res, p.ReplaceWithObjRef.FieldRef.FieldPath); err != nil {
 						p.logger.Printf("error getting replacement value: %v\n", err)
 					} else {
-						p.Replace = replacementValue
+						p.replaceStr = replacementValue
+						p.Replace = replace
 						replaceEmpty = true
 						break
 					}
 				}
 			}
-			if p.Replace == "" && !replaceEmpty {
+			if p.replaceStr == "" && !replaceEmpty {
 				p.logger.Printf("Object Reference could not be found")
 				return nil
 			}
@@ -98,10 +118,12 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 			if gitDescribeTag, err := utils.GetGitDescribeForHead(p.pwd, p.ReplaceWithGitDescribeTag.Default); err != nil {
 				return err
 			} else {
-				p.Replace = strings.TrimPrefix(gitDescribeTag, "v")
+				p.replaceStr = strings.TrimPrefix(gitDescribeTag, "v")
+				p.Replace = p.replaceStr
 			}
 		} else if len(p.ReplaceWithEnvVar) > 0 {
-			p.Replace = os.Getenv(p.ReplaceWithEnvVar)
+			p.replaceStr = os.Getenv(p.ReplaceWithEnvVar)
+			p.Replace = p.replaceStr
 		}
 	}
 	for _, r := range resources {
@@ -135,19 +157,29 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 	return nil
 }
 
-func getReplacementValue(res *resource.Resource, fieldPath string) (string, error) {
+func getReplacementValue(res *resource.Resource, fieldPath string) (string, interface{}, error) {
 	if val, err := res.GetFieldValue(fieldPath); err != nil {
-		return "", err
-	} else if strVal, ok := val.(string); !ok {
-		return "", errors.New("FieldRef for the ReplaceWithObjRef must point to a value of string type")
-	} else if isSecretDataReplacement(res, fieldPath) {
-		if decodedStrVal, err := base64.StdEncoding.DecodeString(strVal); err != nil {
-			return "", err
-		} else {
-			return string(decodedStrVal), nil
-		}
+		return "", nil, err
 	} else {
-		return strVal, nil
+		switch newValue := val.(type) {
+		case int64:
+			return strconv.FormatInt(newValue, 10), val, nil
+		case bool:
+			return strconv.FormatBool(newValue), val, nil
+		case float64:
+			return strconv.FormatFloat(newValue, 'f', -1, 64), val, nil
+		case string:
+			if isSecretDataReplacement(res, fieldPath) {
+				if decodedStrVal, err := base64.StdEncoding.DecodeString(newValue); err != nil {
+					return "", nil, err
+				} else {
+					return string(decodedStrVal), val, nil
+				}
+			}
+			return newValue, val, nil
+		default:
+			return "", false, errors.New("FieldRef for the ReplaceWithObjRef must point to a valid type")
+		}
 	}
 }
 
@@ -186,15 +218,38 @@ func (p *SearchReplacePlugin) searchAndReplaceRNode(node *kyaml.RNode, base64Enc
 	if err != nil {
 		return err
 	}
-
-	if _, ok := changed.(string); ok {
-		node.YNode().Value = changed.(string)
-	} else {
-		tempMap := map[string]interface{}{"tmp": changed}
-		if tempMapRNode, err := utils.NewKyamlRNode(tempMap); err != nil {
-			return err
+	if changed != nil {
+		if strChanged, ok := changed.(string); ok {
+			var targetType = "string"
+			if p.ReplaceType == "" {
+				if strChanged == p.replaceStr {
+					targetType = reflect.TypeOf(p.Replace).String()
+				}
+			} else {
+				targetType = p.ReplaceType
+			}
+			switch targetType {
+			case "int64":
+				node.YNode().Value = strChanged
+				node.YNode().Tag = kyaml.NodeTagInt
+			case "bool":
+				node.YNode().Value = strChanged
+				node.YNode().Tag = kyaml.NodeTagBool
+			case "float64":
+				node.YNode().Value = strChanged
+				node.YNode().Tag = kyaml.NodeTagFloat
+			default:
+				node.YNode().Value = strChanged
+				node.YNode().Tag = kyaml.NodeTagString
+			}
+			node.YNode().Style = 0
 		} else {
-			node.SetYNode(tempMapRNode.Field("tmp").Value.YNode())
+			tempMap := map[string]interface{}{"tmp": changed}
+			if tempMapRNode, err := utils.NewKyamlRNode(tempMap); err != nil {
+				return err
+			} else {
+				node.SetYNode(tempMapRNode.Field("tmp").Value.YNode())
+			}
 		}
 	}
 	return nil
@@ -206,11 +261,17 @@ func (p *SearchReplacePlugin) searchAndReplace(in interface{}, base64Encoded boo
 			if decodedValue, err := base64.StdEncoding.DecodeString(target); err != nil {
 				return nil, err
 			} else {
-				replacedDecodedValue := p.re.ReplaceAllString(string(decodedValue), p.Replace)
+				replacedDecodedValue := p.re.ReplaceAllString(string(decodedValue), p.replaceStr)
 				return base64.StdEncoding.EncodeToString([]byte(replacedDecodedValue)), nil
 			}
 		} else {
-			return p.re.ReplaceAllString(target, p.Replace), nil
+			retVal := p.re.ReplaceAllString(target, p.replaceStr)
+			// didn't replace anything to retain type
+			if retVal != target {
+				return retVal, nil
+			} else {
+				return nil, nil
+			}
 		}
 	} else if target, ok := in.(map[string]interface{}); ok {
 		return p.marshallToJsonAndReplace(target)
@@ -225,7 +286,7 @@ func (p *SearchReplacePlugin) marshallToJsonAndReplace(in interface{}) (interfac
 		p.logger.Printf("error marshalling interface to JSON, error: %v\n", err)
 		return nil, err
 	} else {
-		replaced := p.re.ReplaceAllString(string(marshalledTarget), p.Replace)
+		replaced := p.re.ReplaceAllString(string(marshalledTarget), p.replaceStr)
 		if err := json.Unmarshal([]byte(replaced), &in); err != nil {
 			p.logger.Printf("error unmarshalling JSON string after replacements back to interface, error: %v\n", err)
 			return nil, err

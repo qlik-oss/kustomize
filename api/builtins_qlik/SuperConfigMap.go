@@ -12,7 +12,7 @@ import (
 )
 
 type SuperConfigMapPlugin struct {
-	Data   map[string]string `json:"data,omitempty" yaml:"data,omitempty"`
+	Data   map[string]interface{} `json:"data,omitempty" yaml:"data,omitempty"`
 	logger *log.Logger
 	builtins.ConfigMapGeneratorPlugin
 	SuperMapPluginBase
@@ -20,7 +20,7 @@ type SuperConfigMapPlugin struct {
 
 func (p *SuperConfigMapPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
 	p.SuperMapPluginBase = NewBase(h.ResmapFactory(), p)
-	p.Data = make(map[string]string)
+	p.Data = make(map[string](interface{}))
 	err = yaml.Unmarshal(c, p)
 	if err != nil {
 		p.logger.Printf("error unmarshalling yaml, error: %v\n", err)
@@ -66,7 +66,7 @@ func (p *SuperConfigMapPlugin) GetType() string {
 	return "ConfigMap"
 }
 
-func (p *SuperConfigMapPlugin) GetConfigData() map[string]string {
+func (p *SuperConfigMapPlugin) GetConfigData() map[string]interface{} {
 	return p.Data
 }
 
