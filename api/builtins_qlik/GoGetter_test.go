@@ -8,10 +8,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -19,7 +17,6 @@ import (
 
 	"github.com/mholt/archiver/v3"
 	"github.com/pkg/errors"
-	"github.com/sosedoff/gitkit"
 	"sigs.k8s.io/kustomize/api/filesys"
 	"sigs.k8s.io/kustomize/api/k8sdeps/kunstruct"
 	"sigs.k8s.io/kustomize/api/loader"
@@ -37,6 +34,8 @@ func (r *testExecutableResolverT) Executable() (string, error) {
 	return r.path, r.err
 }
 
+const gitRepoUrl = "https://github.com/qlik-oss/kustomize-gogetter-plugin-tests"
+
 func Test_GoGetter(t *testing.T) {
 	type tcT struct {
 		name            string
@@ -52,44 +51,52 @@ func Test_GoGetter(t *testing.T) {
 				t.Fatalf("unexpected error: %v\n", err)
 			}
 
-			gitService := gitkit.New(gitkit.Config{
-				Dir:        tmpDir,
-				AutoCreate: true,
-			})
-			if err := gitService.Setup(); err != nil {
-				t.Fatalf("error starting gitkit service: %v", err)
-			}
-			gitServer := httptest.NewServer(gitService)
-
-			if _, err := execCmd(tmpDir, "git", "clone", fmt.Sprintf("%s/foo.git", gitServer.URL), "foo"); err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			} else if _, err := execCmd(path.Join(tmpDir, "foo"), "git", "config", "user.email", "you@example.com"); err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			} else if err := ioutil.WriteFile(path.Join(tmpDir, "foo", "kustomization.yaml"), []byte(`
-generatorOptions:
-  disableNameSuffixHash: true
-configMapGenerator:
-- name: foo-config
-  literals:
-  - foo=bar
-`), os.ModePerm); err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			} else if _, err := execCmd(path.Join(tmpDir, "foo"), "git", "add", "."); err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			} else if _, err := execCmd(path.Join(tmpDir, "foo"), "git", "commit", "-m", "First commit"); err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			} else if _, err := execCmd(path.Join(tmpDir, "foo"), "git", "push", "origin", "master"); err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
 			return &tcT{
-				name: "go-get and kustomize",
+				name: "get and kustomize",
 				pluginConfig: fmt.Sprintf(`
 apiVersion: qlik.com/v1
 kind: GoGetter
 metadata:
  name: notImportantHere
-url: %s
+url: %s?ref=master
+cwd: manifests
+`, gitRepoUrl),
+				loaderRootDir: tmpDir,
+				teardown: func(t *testing.T) {
+					_ = os.RemoveAll(tmpDir)
+				},
+				checkAssertions: func(t *testing.T, resMap resmap.ResMap) {
+					expectedK8sYaml := `apiVersion: v1
+data:
+  foo: bar
+kind: ConfigMap
+metadata:
+  name: foo-config
+`
+					if resMapYaml, err := resMap.AsYaml(); err != nil {
+						t.Fatalf("unexpected error: %v\n", err)
+					} else if string(resMapYaml) != expectedK8sYaml {
+						t.Fatalf("expected k8s yaml: [%v] but got: [%v]\n", expectedK8sYaml, string(resMapYaml))
+					}
+					_ = os.RemoveAll(tmpDir)
+				},
+			}
+		}(),
+		func() *tcT {
+			tmpDir, err := ioutil.TempDir("", "")
+			if err != nil {
+				t.Fatalf("unexpected error: %v\n", err)
+			}
+
+			return &tcT{
+				name: "get, pre-build and kustomize",
+				pluginConfig: fmt.Sprintf(`
+apiVersion: qlik.com/v1
+kind: GoGetter
+metadata:
+ name: notImportantHere
+url: %s?ref=master
+cwd: manifests
 preBuildScript: |-
     package main
     import (
@@ -128,10 +135,9 @@ preBuildScript: |-
             panic(err)
         }
     }
-`, fmt.Sprintf("git::%s/foo", gitServer.URL)),
+`, gitRepoUrl),
 				loaderRootDir: tmpDir,
 				teardown: func(t *testing.T) {
-					gitServer.Close()
 					_ = os.RemoveAll(tmpDir)
 				},
 				checkAssertions: func(t *testing.T, resMap resmap.ResMap) {
