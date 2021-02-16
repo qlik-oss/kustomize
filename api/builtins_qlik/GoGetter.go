@@ -156,14 +156,14 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 		}
 
 	}
+	var kustomizedYaml bytes.Buffer
 	cmd := exec.Command(currentExe, "build", ".")
-	cmd.Stderr = os.Stderr
-	kustomizedYaml, err := cmd.Output()
+	err = p.getRunCommand(cmd, &kustomizedYaml)
 	if err != nil {
 		p.logger.Printf("Error executing kustomize as a child process: %v\n", err)
 		return nil, err
 	}
-	return p.rf.NewResMapFromBytes(kustomizedYaml)
+	return p.rf.NewResMapFromBytes(kustomizedYaml.Bytes())
 }
 
 // GoGit ...
@@ -227,9 +227,15 @@ func (p *GoGetterPlugin) executeGitGetter(url *url.URL, dir string) error {
 	return nil
 }
 
-func (p *GoGetterPlugin) getRunCommand(cmd *exec.Cmd) error {
+func (p *GoGetterPlugin) getRunCommand(cmd *exec.Cmd, stdOut *bytes.Buffer) error {
 	var buf bytes.Buffer
+	if stdOut == nil {
+		cmd.Stdout = &buf
+	} else {
+		cmd.Stdout = stdOut
+	}
 	cmd.Stderr = &buf
+
 	err := cmd.Run()
 	if err == nil {
 		return nil
@@ -277,34 +283,34 @@ func (p *GoGetterPlugin) clone(dst string, u *url.URL, ref string) error {
 	}
 	args = append(args, u.String(), filepath.Join(dst, ".git"))
 
-	if err := p.getRunCommand(exec.Command("git", args...)); err != nil {
+	if err := p.getRunCommand(exec.Command("git", args...), nil); err != nil {
 		p.logger.Printf("error executing git clone: %v\n", err)
 		return err
 	}
 
 	cmd := exec.Command("git", "config", "--local", "--bool", "core.bare", "false")
 	cmd.Dir = dst
-	if err := p.getRunCommand(cmd); err != nil {
+	if err := p.getRunCommand(cmd, nil); err != nil {
 		p.logger.Printf("error executing git config: %v\n", err)
 		return err
 	}
 
 	cmd = exec.Command("git", "sparse-checkout", "init", "--cone")
 	cmd.Dir = dst
-	if err := p.getRunCommand(cmd); err != nil {
+	if err := p.getRunCommand(cmd, nil); err != nil {
 		p.logger.Printf("error executing git sparse-checkout init: %v\n", err)
 		return err
 	}
 	// hard code for now
 	cmd = exec.Command("git", "sparse-checkout", "set", p.PartialCloneDir)
 	cmd.Dir = dst
-	if err := p.getRunCommand(cmd); err != nil {
+	if err := p.getRunCommand(cmd, nil); err != nil {
 		p.logger.Printf("error executing git space-checkout set: %v\n", err)
 		return err
 	}
 	cmd = exec.Command("git", "checkout")
 	cmd.Dir = dst
-	if err := p.getRunCommand(cmd); err != nil {
+	if err := p.getRunCommand(cmd, nil); err != nil {
 		p.logger.Printf("git checkout: %v\n", err)
 		return err
 	}
@@ -321,12 +327,10 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 	// Check if branch/tag/commit id changed (that order)
 	cmd := exec.Command("git", "symbolic-ref", "--short", "-q", "HEAD")
 	cmd.Dir = dst
-	cmd.Stdout = &stdoutbuf
-	if p.getRunCommand(cmd) != nil {
+	if p.getRunCommand(cmd, &stdoutbuf) != nil {
 		cmd := exec.Command("git", "describe", "--tags", "--exact-match")
 		cmd.Dir = dst
-		cmd.Stdout = &stdoutbuf
-		if p.getRunCommand(cmd) == nil {
+		if p.getRunCommand(cmd, &stdoutbuf) == nil {
 			if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
 				clone = false
 			}
@@ -334,8 +338,7 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 			// No tag
 			cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
 			cmd.Dir = dst
-			cmd.Stdout = &stdoutbuf
-			if p.getRunCommand(cmd) == nil {
+			if p.getRunCommand(cmd, &stdoutbuf) == nil {
 				if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
 					clone = false
 				}
@@ -354,7 +357,7 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 
 	cmd = exec.Command("git", "pull", "--ff-only")
 	cmd.Dir = dst
-	if p.getRunCommand(cmd) != nil {
+	if p.getRunCommand(cmd, nil) != nil {
 		// reclone
 		os.RemoveAll(dst)
 		return p.clone(dst, u, ref)
