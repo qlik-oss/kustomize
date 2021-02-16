@@ -1,0 +1,22 @@
+name: Qlik test
+
+on: [pull_request]
+
+jobs:
+
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/setup-go@v2
+        with:
+          go-version: 1.14
+
+      - uses: actions/checkout@v2
+
+      - name: test
+        run: |
+          make qlik-test-api-plugins
+
+          cd kustomize
+          go build -o /tmp/kustomize main.go

@@ -21,7 +21,6 @@ import (
 	"sigs.k8s.io/kustomize/api/filesys"
 	"sigs.k8s.io/kustomize/api/ifc"
 	"sigs.k8s.io/kustomize/api/konfig"
-	"sigs.k8s.io/kustomize/api/loader"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/types"
 	"sigs.k8s.io/yaml"
@@ -211,9 +210,6 @@ func (p *GoGetterPlugin) findDefaultBranch(dst string) string {
 }
 
 func (p *GoGetterPlugin) executeGitGetter(url *url.URL, dir string) error {
-
-	loader.GoGetterMutex.Lock()
-	defer loader.GoGetterMutex.Unlock()
 
 	if _, err := exec.LookPath("git"); err != nil {
 		return fmt.Errorf("git must be available and on the PATH")
