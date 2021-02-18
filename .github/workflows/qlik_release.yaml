@@ -22,13 +22,12 @@ jobs:
       - name: release
         run: |
           set -x
-
-          assets=()
-          for asset in bin/*.tar.gz; do
-            assets+=("-a" "$asset")
-          done
-
           QLIK_VERSION=${GITHUB_REF/refs\/tags\//}
-          hub release create "${assets[@]}" -m "${QLIK_VERSION}" "${QLIK_VERSION}"
+
+          if gh release view "${QLIK_VERSION}"; then
+            gh release upload "${QLIK_VERSION}" ./bin/*.tar.gz --clobber
+          else
+            gh release create "${QLIK_VERSION}" -n "${QLIK_VERSION}" -p ./bin/*.tar.gz
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
