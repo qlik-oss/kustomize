@@ -1,15 +1,19 @@
 package builtins_qlik
 
 import (
-	"context"
-	"io/ioutil"
+	"bytes"
+	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
+	"syscall"
 
-	"github.com/hashicorp/go-getter"
+	version "github.com/hashicorp/go-version"
 	"github.com/traefik/yaegi/interp"
 	"github.com/traefik/yaegi/stdlib"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
@@ -17,7 +21,6 @@ import (
 	"sigs.k8s.io/kustomize/api/filesys"
 	"sigs.k8s.io/kustomize/api/ifc"
 	"sigs.k8s.io/kustomize/api/konfig"
-	"sigs.k8s.io/kustomize/api/loader"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/types"
 	"sigs.k8s.io/yaml"
@@ -34,6 +37,8 @@ func (r *osExecutableResolverT) Executable() (string, error) {
 	return os.Executable()
 }
 
+var defaultBranchRegexp = regexp.MustCompile(`\s->\sorigin/(.*)`)
+
 // GoGetterPlugin ...
 type GoGetterPlugin struct {
 	types.ObjectMeta   `json:"metadata,omitempty" yaml:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
@@ -41,6 +46,29 @@ type GoGetterPlugin struct {
 	Cwd                string `json:"cwd,omitempty" yaml:"cwd,omitempty"`
 	PreBuildScript     string `json:"preBuildScript,omitempty" yaml:"preBuildScript,omitempty"`
 	PreBuildScriptFile string `json:"preBuildScriptFile,omitempty" yaml:"preBuildScriptFile,omitempty"`
+	PartialCloneDir    string `json:"partialCloneDir,omitempty" yaml:"partialCloneDir,omitempty"`
+	/* CloneFilter
+	   The best filter would likely be the unsupported as of 2.30 "combine:blob:none+tree:0"
+	   Therefor a filter must be chosen.
+
+	   For repos with limited branches but many files:
+	   - blob:none
+
+	   For repos with large trees and many files (default):
+	   - tree:0
+
+	   The following can be used to test (ex. engine)
+
+	   ```
+	   time sh -c " \
+	     git clone --bare --filter=tree:0 --no-checkout https://github.com/kubernetes/kubernetes kubernetes/.git ; \
+	     cd kubernetes ; \
+		 git config --local --bool core.bare false ; \
+		 git sparse-checkout init --cone ; \
+		 git sparse-checkout set manifests ; \
+		 git checkout"
+	*/
+	CloneFilter        string `json:"cloneFilter,omitempty" yaml:"cloneFilter,omitempty"`
 	Pwd                string
 	ldr                ifc.Loader
 	rf                 *resmap.Factory
@@ -60,6 +88,12 @@ func (p *GoGetterPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
 // Generate ...
 func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 
+	if len(p.PartialCloneDir) == 0 {
+		p.PartialCloneDir = "manifests"
+	}
+	if len(p.CloneFilter) == 0 {
+		p.CloneFilter = "tree:0"
+	}
 	dir, err := konfig.DefaultAbsPluginHome(filesys.MakeFsOnDisk())
 	if err != nil {
 		dir = filepath.Join(konfig.HomeDir(), konfig.XdgConfigHomeEnvDefault, konfig.ProgramName, konfig.RelPluginHome)
@@ -72,18 +106,15 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 		p.logger.Printf("error creating directory: %v, error: %v\n", dir, err)
 		return nil, err
 	}
-
-	opts := []getter.ClientOption{}
-	client := &getter.Client{
-		Ctx:     context.TODO(),
-		Src:     p.URL,
-		Dst:     dir,
-		Pwd:     p.Pwd,
-		Mode:    getter.ClientModeAny,
-		Options: opts,
+	// We usually only fetch a branch at a time
+	url, err := url.Parse(p.URL)
+	if err != nil {
+		p.logger.Printf("Bad git URL %v\n", err)
+		return nil, err
 	}
+	url.Scheme = "https"
 
-	if err := p.executeGoGetter(client, dir); err != nil {
+	if err := p.executeGitGetter(url, dir); err != nil {
 		p.logger.Printf("Error fetching repository: %v\n", err)
 		return nil, err
 	}
@@ -102,7 +133,7 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 	// thinks its a remote ref
 	oswd, _ := os.Getwd()
 	err = os.Chdir(cwd)
-
+	defer os.Chdir(oswd)
 	if err != nil {
 		p.logger.Printf("Error: Unable to set working dir %v: %v\n", cwd, err)
 		return nil, err
@@ -124,62 +155,240 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 		}
 
 	}
-
+	var kustomizedYaml bytes.Buffer
 	cmd := exec.Command(currentExe, "build", ".")
-	cmd.Stderr = os.Stderr
-	kustomizedYaml, err := cmd.Output()
+	err = p.getRunCommand(cmd, &kustomizedYaml)
 	if err != nil {
 		p.logger.Printf("Error executing kustomize as a child process: %v\n", err)
 		return nil, err
 	}
-	_ = os.Chdir(oswd)
-	return p.rf.NewResMapFromBytes(kustomizedYaml)
+	return p.rf.NewResMapFromBytes(kustomizedYaml.Bytes())
 }
 
-func (p *GoGetterPlugin) executeGoGetter(client *getter.Client, dir string) error {
-	loader.GoGetterMutex.Lock()
-	defer loader.GoGetterMutex.Unlock()
+// GoGit ...
+func (p *GoGetterPlugin) GoGit(u *url.URL, dir string) error {
+	var ref string
+	q := u.Query()
+	if len(q) > 0 {
 
-	// In case it was an update (slighty inefficient but easy)
-	// Second time is not a full clone
-	// go getter doesn't do --tags so we can "fake it"
-	if _, err := os.Stat(dir); err != nil {
-		// First Time
-		if os.IsNotExist(err) {
-			if err := client.Get(); err != nil {
-				p.logger.Printf("Error executing go-getter: %v\n", err)
-				return err
-			}
-		}
+		ref = q.Get("ref")
+		q.Del("ref")
+
+		// Copy the URL
+		var newU url.URL = *u
+		u = &newU
+
+		u.RawQuery = q.Encode()
 	}
-	// read the whole file at once
-	b, err := ioutil.ReadFile(filepath.Join(dir, ".git", "config"))
-	if err != nil {
-		p.logger.Printf("error reading git config file: %v, error: %v\n", filepath.Join(dir, ".git", "config"), err)
+
+	// Clone or update the repository
+	_, err := os.Stat(dir)
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if !strings.Contains(string(b), "+refs/tags/*:refs/tags/*") {
-		cmd := exec.Command("git", "config", "-f", filepath.Join(dir, ".git", "config"), "--add", "remote.origin.fetch", "+refs/tags/*:refs/tags/*")
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			p.logger.Printf("error executing git config: %v\n", err)
-			return err
-		}
+	if err == nil {
+		err = p.update(dir, u, ref)
+	} else {
+		err = p.clone(dir, u, ref)
 	}
-	if err := client.Get(); err != nil {
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func (p *GoGetterPlugin) findDefaultBranch(dst string) string {
+	var stdoutbuf bytes.Buffer
+	cmd := exec.Command("git", "branch", "-r", "--points-at", "refs/remotes/origin/HEAD")
+	cmd.Dir = dst
+	cmd.Stdout = &stdoutbuf
+	err := cmd.Run()
+	matches := defaultBranchRegexp.FindStringSubmatch(stdoutbuf.String())
+	if err != nil || matches == nil {
+		return "master"
+	}
+	return matches[len(matches)-1]
+}
+
+func (p *GoGetterPlugin) executeGitGetter(url *url.URL, dir string) error {
+
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git must be available and on the PATH")
+	}
+
+	if err := p.GoGit(url, dir); err != nil {
 		p.logger.Printf("Error executing go-getter: %v\n", err)
 		return err
 	}
 
-	// Since we are checking for existance we should not need
-	// cmd := exec.Command("git", "config", "-f", filepath.Join(dir, ".git", "config"), "--unset", "remote.origin.fetch", `\+refs\/tags\/\*\:refs\/tags\/\*`)
-	// cmd.Stderr = os.Stderr
-	// cmd.Run()
-
 	return nil
+}
+
+func (p *GoGetterPlugin) getRunCommand(cmd *exec.Cmd, stdOut *bytes.Buffer) error {
+	var buf bytes.Buffer
+	if stdOut == nil {
+		cmd.Stdout = &buf
+	} else {
+		cmd.Stdout = stdOut
+	}
+	cmd.Stderr = &buf
+
+	err := cmd.Run()
+	if err == nil {
+		return nil
+	}
+	if exiterr, ok := err.(*exec.ExitError); ok {
+		// The program has exited with an exit code != 0
+		if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+			return fmt.Errorf(
+				"%s exited with %d: %s",
+				cmd.Path,
+				status.ExitStatus(),
+				buf.String())
+		}
+	}
+
+	return fmt.Errorf("error running %s: %s", cmd.Path, buf.String())
 }
 
 // NewGoGetterPlugin ...
 func NewGoGetterPlugin() resmap.GeneratorPlugin {
 	return &GoGetterPlugin{logger: utils.GetLogger("GoGetterPlugin"), executableResolver: &osExecutableResolverT{}}
+}
+
+func (p *GoGetterPlugin) clone(dst string, u *url.URL, ref string) error {
+
+	// We need the fast clone with history
+	// Cloning the bare repo then doing sparse checkout seems fastest across all versions
+	// depth=1 is fast but we cannot use "depth" regardless because we need history for other plugins
+	// (and doesn't work with < 2.30)
+	// See note above about filters
+	var args []string
+	if err := p.checkGitVersion("2.25"); err == nil {
+		args = []string{"clone", "--bare", "--filter", p.CloneFilter, "--no-checkout"}
+	} else {
+		return err
+	}
+
+	// git clone --bare --filter=tree:0 --no-checkout https://github.com/<org>/repo <dir>/.git
+	// git -C <dir> config --local --bool core.bare false
+	// git -C <dir> sparse-checkout init --cone
+	// git -C <dir> sparse-checkout set <sparse directory>
+	// git -C <dir> checkout
+	if len(ref) != 0 {
+		args = append(args, "--branch", ref)
+	}
+	args = append(args, u.String(), filepath.Join(dst, ".git"))
+
+	if err := p.getRunCommand(exec.Command("git", args...), nil); err != nil {
+		p.logger.Printf("error executing git clone: %v\n", err)
+		return err
+	}
+
+	cmd := exec.Command("git", "config", "--local", "--bool", "core.bare", "false")
+	cmd.Dir = dst
+	if err := p.getRunCommand(cmd, nil); err != nil {
+		p.logger.Printf("error executing git config: %v\n", err)
+		return err
+	}
+
+	cmd = exec.Command("git", "sparse-checkout", "init", "--cone")
+	cmd.Dir = dst
+	if err := p.getRunCommand(cmd, nil); err != nil {
+		p.logger.Printf("error executing git sparse-checkout init: %v\n", err)
+		return err
+	}
+	// hard code for now
+	cmd = exec.Command("git", "sparse-checkout", "set", p.PartialCloneDir)
+	cmd.Dir = dst
+	if err := p.getRunCommand(cmd, nil); err != nil {
+		p.logger.Printf("error executing git space-checkout set: %v\n", err)
+		return err
+	}
+	cmd = exec.Command("git", "checkout")
+	cmd.Dir = dst
+	if err := p.getRunCommand(cmd, nil); err != nil {
+		p.logger.Printf("git checkout: %v\n", err)
+		return err
+	}
+	return nil
+}
+
+func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
+	// Determin current sitution
+	var stdoutbuf bytes.Buffer
+	var clone = true
+	if len(ref) == 0 {
+		ref = p.findDefaultBranch(dst)
+	}
+	// Check if branch/tag/commit id changed (that order)
+	cmd := exec.Command("git", "symbolic-ref", "--short", "-q", "HEAD")
+	cmd.Dir = dst
+	if p.getRunCommand(cmd, &stdoutbuf) != nil {
+		cmd := exec.Command("git", "describe", "--tags", "--exact-match")
+		cmd.Dir = dst
+		if p.getRunCommand(cmd, &stdoutbuf) == nil {
+			if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
+				clone = false
+			}
+		} else {
+			// No tag
+			cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+			cmd.Dir = dst
+			if p.getRunCommand(cmd, &stdoutbuf) == nil {
+				if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
+					clone = false
+				}
+			}
+		}
+	} else {
+		if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
+			clone = false
+		}
+	}
+	if clone {
+		// reclone
+		os.RemoveAll(dst)
+		return p.clone(dst, u, ref)
+	}
+
+	cmd = exec.Command("git", "pull", "--ff-only", "origin", ref)
+	cmd.Dir = dst
+	if p.getRunCommand(cmd, nil) != nil {
+		// reclone
+		os.RemoveAll(dst)
+		return p.clone(dst, u, ref)
+	}
+	return nil
+}
+
+func (p *GoGetterPlugin) checkGitVersion(min string) error {
+	want, err := version.NewVersion(min)
+	if err != nil {
+		return err
+	}
+
+	out, err := exec.Command("git", "version").Output()
+	if err != nil {
+		return err
+	}
+
+	fields := strings.Fields(string(out))
+	if len(fields) < 3 {
+		return fmt.Errorf("Unexpected 'git version' output: %q", string(out))
+	}
+	v := fields[2]
+	if runtime.GOOS == "windows" && strings.Contains(v, ".windows.") {
+		v = v[:strings.Index(v, ".windows.")]
+	}
+
+	have, err := version.NewVersion(v)
+	if err != nil {
+		return err
+	}
+
+	if have.LessThan(want) {
+		return fmt.Errorf("Required git version = %s, have %s", want, have)
+	}
+
+	return nil
 }

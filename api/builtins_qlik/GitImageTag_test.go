@@ -157,7 +157,14 @@ func Test_ImageGitTag_getGitDescribeForHead(t *testing.T) {
 func execCmd(dir, name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	return cmd.Output()
+
+	buf := &bytes.Buffer{}
+	cmd.Stderr = buf
+	if output, err := cmd.Output(); err != nil {
+		return output, fmt.Errorf("error: %w, stderr: %s", err, string(buf.Bytes()))
+	} else {
+		return output, nil
+	}
 }
 
 func writeAndCommitFile(dir, fileName, fileContent, commitMessage string) error {
@@ -174,7 +181,9 @@ func writeAndCommitFile(dir, fileName, fileContent, commitMessage string) error 
 func setupGitDirWithSubdir(tmpDir string, headTags []string, intermediateTags []string) (dir string, shortGitRef string, err error) {
 	if _, err := execCmd(tmpDir, "git", "init"); err != nil {
 		return "", "", err
-	} else if _, err := execCmd(tmpDir, "git", "config", "user.email", "you@example.com"); err != nil {
+	} else if _, err := execCmd(tmpDir, "git", "config", "user.name", "ci"); err != nil {
+		return "", "", err
+	} else if _, err := execCmd(tmpDir, "git", "config", "user.email", "ci@qlik.com"); err != nil {
 		return "", "", err
 	}
 

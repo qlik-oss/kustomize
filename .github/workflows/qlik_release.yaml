@@ -1,0 +1,34 @@
+name: Qlik release
+
+on:
+  push:
+    tags:
+      - 'qlik/v*.*.*'
+
+jobs:
+  test-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: test
+        run: |
+          make qlik-test-api-plugins
+
+      - name: build all
+        run: |
+          QLIK_VERSION=${GITHUB_REF/refs\/tags\//} make qlik-build-all
+
+      - name: release
+        run: |
+          set -x
+
+          assets=()
+          for asset in bin/*.tar.gz; do
+            assets+=("-a" "$asset")
+          done
+
+          QLIK_VERSION=${GITHUB_REF/refs\/tags\//}
+          hub release create "${assets[@]}" -m "${QLIK_VERSION}" "${QLIK_VERSION}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
