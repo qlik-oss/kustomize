@@ -351,7 +351,7 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 		return p.clone(dst, u, ref)
 	}
 
-	cmd = exec.Command("git", "pull", "--ff-only", "origin", ref)
+	cmd = exec.Command("git", "pull", "--ff-only", "--tags", "origin", ref)
 	cmd.Dir = dst
 	if p.getRunCommand(cmd, nil) != nil {
 		// reclone
