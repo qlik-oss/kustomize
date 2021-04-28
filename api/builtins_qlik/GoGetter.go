@@ -290,19 +290,20 @@ func (p *GoGetterPlugin) clone(dst string, u *url.URL, ref string) error {
 		p.logger.Printf("error executing git config: %v\n", err)
 		return err
 	}
-
-	cmd = exec.Command("git", "sparse-checkout", "init", "--cone")
-	cmd.Dir = dst
-	if err := p.getRunCommand(cmd, nil); err != nil {
-		p.logger.Printf("error executing git sparse-checkout init: %v\n", err)
-		return err
-	}
-	// hard code for now
-	cmd = exec.Command("git", "sparse-checkout", "set", p.PartialCloneDir)
-	cmd.Dir = dst
-	if err := p.getRunCommand(cmd, nil); err != nil {
-		p.logger.Printf("error executing git space-checkout set: %v\n", err)
-		return err
+	if p.PartialCloneDir != "." {
+		cmd = exec.Command("git", "sparse-checkout", "init", "--cone")
+		cmd.Dir = dst
+		if err := p.getRunCommand(cmd, nil); err != nil {
+			p.logger.Printf("error executing git sparse-checkout init: %v\n", err)
+			return err
+		}
+		// hard code for now
+		cmd = exec.Command("git", "sparse-checkout", "set", p.PartialCloneDir)
+		cmd.Dir = dst
+		if err := p.getRunCommand(cmd, nil); err != nil {
+			p.logger.Printf("error executing git space-checkout set: %v\n", err)
+			return err
+		}
 	}
 	cmd = exec.Command("git", "checkout")
 	cmd.Dir = dst
