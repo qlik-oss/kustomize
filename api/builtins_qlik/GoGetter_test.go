@@ -89,7 +89,7 @@ metadata:
 			}
 
 			return &tcT{
-				name: "get, pre-build and kustomize",
+				name: "get re-build and kustomize",
 				pluginConfig: fmt.Sprintf(`
 apiVersion: qlik.com/v1
 kind: GoGetter
@@ -98,7 +98,7 @@ metadata:
 url: %s?ref=master
 cwd: manifests
 preBuildScript: |-
-    package main
+    package kust
     import (
         "fmt"
         "io/ioutil"
@@ -115,7 +115,7 @@ preBuildScript: |-
         } `+"`yaml:\"configMapGenerator\"`"+`
     }
     
-    func main() {
+    func PreBuild(args []string) error {
         var k Kustomization
         yamlFile, err := ioutil.ReadFile("kustomization.yaml")
         if err != nil {
@@ -134,6 +134,7 @@ preBuildScript: |-
         if err != nil {
             panic(err)
         }
+        return nil
     }
 `, gitRepoUrl),
 				loaderRootDir: tmpDir,
