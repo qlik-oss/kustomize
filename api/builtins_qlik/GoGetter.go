@@ -3,6 +3,7 @@ package builtins_qlik
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
@@ -41,12 +42,16 @@ var defaultBranchRegexp = regexp.MustCompile(`\s->\sorigin/(.*)`)
 
 // GoGetterPlugin ...
 type GoGetterPlugin struct {
-	types.ObjectMeta   `json:"metadata,omitempty" yaml:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
-	URL                string `json:"url,omitempty" yaml:"url,omitempty"`
-	Cwd                string `json:"cwd,omitempty" yaml:"cwd,omitempty"`
-	PreBuildScript     string `json:"preBuildScript,omitempty" yaml:"preBuildScript,omitempty"`
-	PreBuildScriptFile string `json:"preBuildScriptFile,omitempty" yaml:"preBuildScriptFile,omitempty"`
-	PartialCloneDir    string `json:"partialCloneDir,omitempty" yaml:"partialCloneDir,omitempty"`
+	types.ObjectMeta    `json:"metadata,omitempty" yaml:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	URL                 string   `json:"url,omitempty" yaml:"url,omitempty"`
+	Cwd                 string   `json:"cwd,omitempty" yaml:"cwd,omitempty"`
+	PreBuildArgs        []string `json:"preBuildArgs,omitempty" yaml:"preBuildArgs,omitempty"`
+	PreBuildScript      string   `json:"preBuildScript,omitempty" yaml:"preBuildScript,omitempty"`
+	PreBuildScriptFile  string   `json:"preBuildScriptFile,omitempty" yaml:"preBuildScriptFile,omitempty"`
+	PostBuildArgs       []string `json:"postBuildArgs,omitempty" yaml:"postBuildArgs,omitempty"`
+	PostBuildScript     string   `json:"postBuildScript,omitempty" yaml:"postBuildScript,omitempty"`
+	PostBuildScriptFile string   `json:"postBuildScriptFile,omitempty" yaml:"postBuildScriptFile,omitempty"`
+	PartialCloneDir     string   `json:"partialCloneDir,omitempty" yaml:"partialCloneDir,omitempty"`
 	/* CloneFilter
 	   The best filter would likely be the unsupported as of 2.30 "combine:blob:none+tree:0"
 	   Therefor a filter must be chosen.
@@ -144,16 +149,37 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 
 		i.Use(stdlib.Symbols)
 		i.Use(yamlv3.Symbols)
+		i.Eval(`package kust
+		var (
+			kustomizedYaml = ""
+
+		)`)
 		if len(p.PreBuildScript) > 0 {
 			_, err = i.Eval(p.PreBuildScript)
 		} else {
-			_, err = i.EvalPath(p.PreBuildScriptFile)
+			var gocode []byte
+			gocode, err = ioutil.ReadFile(p.PreBuildScriptFile)
+			if err != nil {
+				p.logger.Printf("Error loading go file: %v\n", err)
+				return nil, err
+			}
+			_, err = i.Eval(string(gocode))
 		}
 		if err != nil {
 			p.logger.Printf("Go Script Error: %v\n", err)
 			return nil, err
 		}
-
+		v, err := i.Eval("kust.PreBuild")
+		if err != nil {
+			p.logger.Printf("Go Script Error: %v\n", err)
+			return nil, err
+		}
+		preBuild := v.Interface().(func([]string) error)
+		err = preBuild(p.PreBuildArgs)
+		if err != nil {
+			p.logger.Printf("Error from pre-Build: %v\n", err)
+			return nil, err
+		}
 	}
 	var kustomizedYaml bytes.Buffer
 	cmd := exec.Command(currentExe, "build", ".")
@@ -162,7 +188,52 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 		p.logger.Printf("Error executing kustomize as a child process: %v\n", err)
 		return nil, err
 	}
-	return p.rf.NewResMapFromBytes(kustomizedYaml.Bytes())
+	kustBytes := kustomizedYaml.Bytes()
+	if len(p.PostBuildScript) > 0 || len(p.PostBuildScriptFile) > 0 {
+		i := interp.New(interp.Options{})
+
+		i.Use(stdlib.Symbols)
+		i.Use(yamlv3.Symbols)
+		_, err = i.Eval(`package kust
+		var (
+			kustomizedYaml = ` + "`" + strings.ReplaceAll(kustomizedYaml.String(), "`", "``") + "`" + `
+		)`)
+		if err != nil {
+			p.logger.Printf("Go Script Error: %v\n", err)
+			return nil, err
+		}
+		if len(p.PostBuildScript) > 0 {
+			_, err = i.Eval(p.PostBuildScript)
+		} else {
+			var gocode []byte
+			gocode, err = ioutil.ReadFile(p.PostBuildScriptFile)
+			if err != nil {
+				p.logger.Printf("Error loading go file: %v\n", err)
+				return nil, err
+			}
+			_, err = i.Eval(string(gocode))
+		}
+		if err != nil {
+			p.logger.Printf("Go Script Error: %v\n", err)
+			return nil, err
+		}
+		v, err := i.Eval("kust.PostBuild")
+		if err != nil {
+			p.logger.Printf("Go Script Error: %v\n", err)
+			return nil, err
+		}
+		postBuild := v.Interface().(func([]string) (*string, error))
+		postBuildRet, err := postBuild(p.PostBuildArgs)
+		if err != nil {
+			p.logger.Printf("Error from post-Build: %v\n", err)
+			return nil, err
+		}
+		if postBuildRet != nil {
+			kustBytes = []byte(*postBuildRet)
+		}
+
+	}
+	return p.rf.NewResMapFromBytes(kustBytes)
 }
 
 // GoGit ...

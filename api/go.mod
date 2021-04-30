@@ -20,7 +20,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/sosedoff/gitkit v0.2.0
 	github.com/stretchr/testify v1.4.0
-	github.com/traefik/yaegi v0.9.4
+	github.com/traefik/yaegi v0.9.13
 	github.com/yujunz/go-getter v1.4.1-lite
 	golang.org/x/crypto v0.0.0-20200302210943-78000ba7a073 // indirect
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a // indirect
