@@ -151,8 +151,8 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 		var (
 			gogetter = interp.Exports{
 				"gogetter": map[string]reflect.Value{
-					"GetKustomizedYaml": reflect.ValueOf(func() string {
-						return ""
+					"GetKustomizedYaml": reflect.ValueOf(func() []byte {
+						return nil
 					}),
 					"GetGoGetter": reflect.ValueOf(func() []byte {
 						return p.yamlBytes
@@ -206,8 +206,8 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 		var (
 			gogetter = interp.Exports{
 				"gogetter": map[string]reflect.Value{
-					"GetKustomizedYaml": reflect.ValueOf(func() string {
-						return kustomizedYaml.String()
+					"GetKustomizedYaml": reflect.ValueOf(func() []byte {
+						return kustomizedYaml.Bytes()
 					}),
 					"GetGoGetter": reflect.ValueOf(func() []byte {
 						return p.yamlBytes
