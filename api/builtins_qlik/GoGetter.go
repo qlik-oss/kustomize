@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strings"
@@ -80,6 +81,7 @@ type GoGetterPlugin struct {
 	logger             *log.Logger
 	newldr             ifc.Loader
 	executableResolver iExecutableResolverT
+	yamlBytes          []byte
 }
 
 // Config ...
@@ -87,6 +89,7 @@ func (p *GoGetterPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
 	p.ldr = h.Loader()
 	p.rf = h.ResmapFactory()
 	p.Pwd = h.Loader().Root()
+	p.yamlBytes = c
 	return yaml.Unmarshal(c, p)
 }
 
@@ -145,15 +148,25 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 	}
 
 	if len(p.PreBuildScript) > 0 || len(p.PreBuildScriptFile) > 0 {
+		var (
+			gogetter = interp.Exports{
+				"gogetter": map[string]reflect.Value{
+					"GetKustomizedYaml": reflect.ValueOf(func() []byte {
+						return nil
+					}),
+					"GetGoGetter": reflect.ValueOf(func() []byte {
+						return p.yamlBytes
+					}),
+				},
+			}
+		)
+
 		i := interp.New(interp.Options{})
 
 		i.Use(stdlib.Symbols)
 		i.Use(yamlv3.Symbols)
-		i.Eval(`package kust
-		var (
-			kustomizedYaml = ""
+		i.Use(gogetter)
 
-		)`)
 		if len(p.PreBuildScript) > 0 {
 			_, err = i.Eval(p.PreBuildScript)
 		} else {
@@ -190,14 +203,25 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 	}
 	kustBytes := kustomizedYaml.Bytes()
 	if len(p.PostBuildScript) > 0 || len(p.PostBuildScriptFile) > 0 {
+		var (
+			gogetter = interp.Exports{
+				"gogetter": map[string]reflect.Value{
+					"GetKustomizedYaml": reflect.ValueOf(func() []byte {
+						return kustomizedYaml.Bytes()
+					}),
+					"GetGoGetter": reflect.ValueOf(func() []byte {
+						return p.yamlBytes
+					}),
+				},
+			}
+		)
+
 		i := interp.New(interp.Options{})
 
 		i.Use(stdlib.Symbols)
 		i.Use(yamlv3.Symbols)
-		_, err = i.Eval(`package kust
-		var (
-			kustomizedYaml = ` + "`" + strings.ReplaceAll(kustomizedYaml.String(), "`", "``") + "`" + `
-		)`)
+		i.Use(gogetter)
+
 		if err != nil {
 			p.logger.Printf("Go Script Error: %v\n", err)
 			return nil, err

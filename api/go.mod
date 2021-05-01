@@ -16,6 +16,8 @@ require (
 	github.com/imdario/mergo v0.3.8
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mholt/archiver/v3 v3.3.0
+	github.com/monopole/gorepomod v0.1.1 // indirect
+	github.com/monopole/mdrip v1.0.2 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/sosedoff/gitkit v0.2.0
