@@ -46,6 +46,7 @@ type GoGetterPlugin struct {
 	types.ObjectMeta    `json:"metadata,omitempty" yaml:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	URL                 string   `json:"url,omitempty" yaml:"url,omitempty"`
 	Cwd                 string   `json:"cwd,omitempty" yaml:"cwd,omitempty"`
+	PreferCache         bool     `json:"cwd,omitempty" yaml:"cwd,omitempty"`
 	PreBuildArgs        []string `json:"preBuildArgs,omitempty" yaml:"preBuildArgs,omitempty"`
 	PreBuildScript      string   `json:"preBuildScript,omitempty" yaml:"preBuildScript,omitempty"`
 	PreBuildScriptFile  string   `json:"preBuildScriptFile,omitempty" yaml:"preBuildScriptFile,omitempty"`
@@ -110,6 +111,10 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 
 	repodir := filepath.Join(dir, "qlik", "v1", "repos")
 	dir = filepath.Join(repodir, p.ObjectMeta.Name)
+	_, err = os.Stat(dir)
+	if err != nil && os.IsNotExist(err) {
+		p.PreferCache = false
+	}
 	if err := os.MkdirAll(repodir, 0777); err != nil {
 		p.logger.Printf("error creating directory: %v, error: %v\n", dir, err)
 		return nil, err
@@ -306,15 +311,16 @@ func (p *GoGetterPlugin) findDefaultBranch(dst string) string {
 
 func (p *GoGetterPlugin) executeGitGetter(url *url.URL, dir string) error {
 
-	if _, err := exec.LookPath("git"); err != nil {
-		return fmt.Errorf("git must be available and on the PATH")
-	}
+	if !p.PreferCache {
+		if _, err := exec.LookPath("git"); err != nil {
+			return fmt.Errorf("git must be available and on the PATH")
+		}
 
-	if err := p.GoGit(url, dir); err != nil {
-		p.logger.Printf("Error executing go-getter: %v\n", err)
-		return err
+		if err := p.GoGit(url, dir); err != nil {
+			p.logger.Printf("Error executing go-getter: %v\n", err)
+			return err
+		}
 	}
-
 	return nil
 }
 
