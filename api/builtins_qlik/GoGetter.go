@@ -369,8 +369,12 @@ func (p *GoGetterPlugin) clone(dst string, u *url.URL, ref string) error {
 	// git -C <dir> sparse-checkout init --cone
 	// git -C <dir> sparse-checkout set <sparse directory>
 	// git -C <dir> checkout
+	isBranch := false
 	if len(ref) != 0 {
-		args = append(args, "--branch", ref)
+		if err := p.getRunCommand(exec.Command("git", "ls-remote", "--exit-code", "--heads", u.String(), ref), nil); err == nil {
+			args = append(args, "--branch", ref)
+			isBranch = true
+		}
 	}
 	args = append(args, u.String(), filepath.Join(dst, ".git"))
 
@@ -400,7 +404,11 @@ func (p *GoGetterPlugin) clone(dst string, u *url.URL, ref string) error {
 			return err
 		}
 	}
-	cmd = exec.Command("git", "checkout")
+	if isBranch {
+		cmd = exec.Command("git", "checkout")
+	} else {
+		cmd = exec.Command("git", "checkout", ref)
+	}
 	cmd.Dir = dst
 	if err := p.getRunCommand(cmd, nil); err != nil {
 		p.logger.Printf("git checkout: %v\n", err)
