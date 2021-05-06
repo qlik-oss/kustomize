@@ -461,8 +461,10 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 				localRef := strings.TrimSuffix(stdoutbuf.String(), "\n")
 				cmd = exec.Command("git", "rev-parse", ref)
 				cmd.Dir = dst
-				if strings.TrimSuffix(stdoutbuf.String(), "\n") == localRef {
-					update = false
+				if p.getRunCommand(cmd, &stdoutbuf) == nil {
+					if strings.TrimSuffix(stdoutbuf.String(), "\n") == localRef {
+						update = false
+					}
 				}
 			}
 		}
