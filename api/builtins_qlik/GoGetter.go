@@ -454,16 +454,20 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 		if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
 			clone = false
 			// Check if we need to pull
-			cmd := exec.Command("git", "rev-parse", "@")
-			cmd.Dir = dst
-
-			if p.getRunCommand(cmd, &stdoutbuf) == nil {
-				localRef := strings.TrimSuffix(stdoutbuf.String(), "\n")
-				cmd = exec.Command("git", "rev-parse", ref)
+			// Check if this repo was partial clone with this directory before
+			_, err := os.Stat(p.PartialCloneDir)
+			if err == nil {
+				cmd := exec.Command("git", "rev-parse", "@")
 				cmd.Dir = dst
+
 				if p.getRunCommand(cmd, &stdoutbuf) == nil {
-					if strings.TrimSuffix(stdoutbuf.String(), "\n") == localRef {
-						update = false
+					localRef := strings.TrimSuffix(stdoutbuf.String(), "\n")
+					cmd = exec.Command("git", "rev-parse", ref)
+					cmd.Dir = dst
+					if p.getRunCommand(cmd, &stdoutbuf) == nil {
+						if strings.TrimSuffix(stdoutbuf.String(), "\n") == localRef {
+							update = false
+						}
 					}
 				}
 			}
