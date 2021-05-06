@@ -421,6 +421,7 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 	// Determin current sitution
 	var stdoutbuf bytes.Buffer
 	var clone = true
+	var update = true
 	if len(ref) == 0 {
 		ref = p.findDefaultBranch(dst)
 	}
@@ -431,22 +432,39 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 		cmd := exec.Command("git", "describe", "--tags", "--exact-match")
 		cmd.Dir = dst
 		if p.getRunCommand(cmd, &stdoutbuf) == nil {
+			// This is a tag
 			if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
 				clone = false
+				// For Sake of performance let's assume tags are immutable
+				update = false
 			}
 		} else {
-			// No tag
+			// A Commit ID
 			cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
 			cmd.Dir = dst
 			if p.getRunCommand(cmd, &stdoutbuf) == nil {
 				if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
 					clone = false
+					update = false
 				}
 			}
 		}
 	} else {
+		// This is a branch
 		if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
 			clone = false
+			// Check if we need to pull
+			cmd := exec.Command("git", "rev-parse", "@")
+			cmd.Dir = dst
+
+			if p.getRunCommand(cmd, &stdoutbuf) == nil {
+				localRef := strings.TrimSuffix(stdoutbuf.String(), "\n")
+				cmd = exec.Command("git", "rev-parse", ref)
+				cmd.Dir = dst
+				if strings.TrimSuffix(stdoutbuf.String(), "\n") == localRef {
+					update = false
+				}
+			}
 		}
 	}
 	if clone {
@@ -454,13 +472,14 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 		os.RemoveAll(dst)
 		return p.clone(dst, u, ref)
 	}
-
-	cmd = exec.Command("git", "pull", "--ff-only", "--tags", "origin", ref)
-	cmd.Dir = dst
-	if p.getRunCommand(cmd, nil) != nil {
-		// reclone
-		os.RemoveAll(dst)
-		return p.clone(dst, u, ref)
+	if update {
+		cmd = exec.Command("git", "pull", "--ff-only", "--tags", "origin", ref)
+		cmd.Dir = dst
+		if p.getRunCommand(cmd, nil) != nil {
+			// reclone
+			os.RemoveAll(dst)
+			return p.clone(dst, u, ref)
+		}
 	}
 	return nil
 }
