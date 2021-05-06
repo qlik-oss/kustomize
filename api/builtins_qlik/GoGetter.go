@@ -375,6 +375,8 @@ func (p *GoGetterPlugin) clone(dst string, u *url.URL, ref string) error {
 			args = append(args, "--branch", ref)
 			isBranch = true
 		}
+	} else {
+		isBranch = true
 	}
 	args = append(args, u.String(), filepath.Join(dst, ".git"))
 
