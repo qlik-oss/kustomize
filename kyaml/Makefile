@@ -1,11 +1,52 @@
 # Copyright 2019 The Kubernetes Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: generate license fix vet fmt test lint tidy openapi
+MYGOBIN = $(shell go env GOBIN)
+ifeq ($(MYGOBIN),)
+MYGOBIN = $(shell go env GOPATH)/bin
+endif
+export PATH := $(MYGOBIN):$(PATH)
 
-GOPATH := $(shell go env GOPATH)
+.PHONY: generate license fix vet fmt test lint tidy clean
 
-all: generate license fix vet fmt test lint tidy
+$(MYGOBIN)/addlicense:
+	go get github.com/google/addlicense
+
+# TODO: Issue #3663
+# Update this version of golangci-lint
+# Ideally use same version as in {REPO}/hack/go.mod
+$(MYGOBIN)/golangci-lint:
+	go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.17.0
+
+$(MYGOBIN)/k8scopy:
+	( cd ../cmd/k8scopy; go install . )
+
+$(MYGOBIN)/stringer:
+	go get golang.org/x/tools/cmd/stringer
+
+all: license fix vet fmt test tidy
+
+k8sGenDir := yaml/internal/k8sgen/pkg
+
+generate: $(MYGOBIN)/stringer $(MYGOBIN)/k8scopy
+	go generate ./...
+
+clean:
+	rm -rf $(k8sGenDir)
+
+lint: $(MYGOBIN)/golangci-lint
+	$(MYGOBIN)/golangci-lint \
+	  run ./...
+
+
+license: $(MYGOBIN)/addlicense
+	$(MYGOBIN)/addlicense \
+	  -y 2021 \
+	  -c "The Kubernetes Authors." \
+	  -f LICENSE_TEMPLATE .
+
+test:
+	go test -cover ./...
 
 fix:
 	go fix ./...
@@ -13,28 +54,8 @@ fix:
 fmt:
 	go fmt ./...
 
-generate:
-	(which $(GOPATH)/bin/stringer || go get golang.org/x/tools/cmd/stringer)
-	go generate ./...
-
-license:
-	(which $(GOPATH)/bin/addlicense || go get github.com/google/addlicense)
-	$(GOPATH)/bin/addlicense  -y 2019 -c "The Kubernetes Authors." -f LICENSE_TEMPLATE .
-
 tidy:
 	go mod tidy
 
-lint:
-	(which $(GOPATH)/bin/golangci-lint || go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.19.1)
-	$(GOPATH)/bin/golangci-lint run ./...
-
-test:
-	go test -cover ./...
-
 vet:
 	go vet ./...
-
-openapi:
-	(which $(GOPATH)/bin/go-bindata || go get -v github.com/go-bindata/go-bindata)
-	$(GOPATH)/bin/go-bindata --pkg kubernetesapi -o openapi/kubernetesapi/swagger.go openapi/kubernetesapi/swagger.json
-	$(GOPATH)/bin/go-bindata --pkg kustomizationapi -o openapi/kustomizationapi/swagger.go openapi/kustomizationapi/swagger.json

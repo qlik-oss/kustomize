@@ -5,7 +5,6 @@ package kusttest_test
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"sigs.k8s.io/kustomize/api/filesys"
@@ -43,27 +42,36 @@ func (th Harness) GetFSys() filesys.FileSystem {
 }
 
 func (th Harness) WriteK(path string, content string) {
-	th.fSys.WriteFile(
+	err := th.fSys.WriteFile(
 		filepath.Join(
 			path,
 			konfig.DefaultKustomizationFileName()), []byte(`
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 `+content))
+	if err != nil {
+		th.t.Fatalf("unexpected error while writing Kustomization to %s: %v", path, err)
+	}
 }
 
 func (th Harness) WriteC(path string, content string) {
-	th.fSys.WriteFile(
+	err := th.fSys.WriteFile(
 		filepath.Join(
 			path,
 			konfig.DefaultKustomizationFileName()), []byte(`
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 `+content))
+	if err != nil {
+		th.t.Fatalf("unexpected error while writing Component to %s: %v", path, err)
+	}
 }
 
 func (th Harness) WriteF(path string, content string) {
-	th.fSys.WriteFile(path, []byte(content))
+	err := th.fSys.WriteFile(path, []byte(content))
+	if err != nil {
+		th.t.Fatalf("unexpected error while writing file to %s: %v", path, err)
+	}
 }
 
 func (th Harness) MakeDefaultOptions() krusty.Options {
@@ -77,15 +85,7 @@ func (th Harness) MakeOptionsPluginsDisabled() krusty.Options {
 
 // Enables use of non-builtin plugins.
 func (th Harness) MakeOptionsPluginsEnabled() krusty.Options {
-	pc, err := konfig.EnabledPluginConfig(types.BploLoadFromFileSys)
-	if err != nil {
-		if strings.Contains(err.Error(), "unable to find plugin root") {
-			th.t.Log(
-				"Tests that want to run with plugins enabled must be " +
-					"bookended by calls to MakeEnhancedHarness(), Reset().")
-		}
-		th.t.Fatal(err)
-	}
+	pc := types.EnabledPluginConfig(types.BploLoadFromFileSys)
 	o := *krusty.MakeDefaultOptions()
 	o.PluginConfig = pc
 	return o
@@ -93,7 +93,7 @@ func (th Harness) MakeOptionsPluginsEnabled() krusty.Options {
 
 // Run, failing on error.
 func (th Harness) Run(path string, o krusty.Options) resmap.ResMap {
-	m, err := krusty.MakeKustomizer(th.fSys, &o).Run(path)
+	m, err := krusty.MakeKustomizer(&o).Run(th.fSys, path)
 	if err != nil {
 		th.t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func (th Harness) Run(path string, o krusty.Options) resmap.ResMap {
 
 // Run, failing if there is no error.
 func (th Harness) RunWithErr(path string, o krusty.Options) error {
-	_, err := krusty.MakeKustomizer(th.fSys, &o).Run(path)
+	_, err := krusty.MakeKustomizer(&o).Run(th.fSys, path)
 	if err == nil {
 		th.t.Fatalf("expected error")
 	}
@@ -123,6 +123,11 @@ func (th Harness) WriteLegacyConfigs(fName string) {
 
 func (th Harness) AssertActualEqualsExpected(
 	m resmap.ResMap, expected string) {
+	th.AssertActualEqualsExpectedWithTweak(m, nil, expected)
+}
+
+func (th Harness) AssertActualEqualsExpectedNoIdAnnotations(m resmap.ResMap, expected string) {
+	m.RemoveBuildAnnotations()
 	th.AssertActualEqualsExpectedWithTweak(m, nil, expected)
 }
 

@@ -1,10 +1,13 @@
 module sigs.k8s.io/kustomize/plugin/builtin/patchstrategicmergetransformer
 
-go 1.14
+go 1.16
 
 require (
-	github.com/pkg/errors v0.8.1
-	sigs.k8s.io/kustomize/api v0.6.2
-	sigs.k8s.io/kustomize/kyaml v0.8.1
+	github.com/stretchr/testify v1.5.1
+	sigs.k8s.io/kustomize/api v0.8.9
 	sigs.k8s.io/yaml v1.2.0
 )
+
+replace sigs.k8s.io/kustomize/api => ../../../api
+
+replace sigs.k8s.io/kustomize/kyaml => ../../../kyaml

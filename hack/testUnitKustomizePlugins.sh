@@ -14,6 +14,9 @@ set -o pipefail
 
 rcAccumulator=0
 
+MYGOBIN=$(go env GOBIN)
+MYGOBIN="${MYGOBIN:-$(go env GOPATH)/bin}"
+
 # All hack scripts should run from top level.
 . hack/shellHelpers.sh
 
@@ -34,7 +37,7 @@ function runTest {
   fi
   rcAccumulator=$((rcAccumulator || $code))
   if [ $code -ne 0 ]; then
-    echo "Failure in $d"
+    echo "**** FAILURE in $d"
   fi
 }
 
@@ -49,24 +52,18 @@ function scanDir {
 
 if onLinuxAndNotOnRemoteCI; then
   # Some of these tests have special deps.
-  make $(go env GOPATH)/bin/helmV2
-  make $(go env GOPATH)/bin/helmV3
-  make $(go env GOPATH)/bin/helm
-  make $(go env GOPATH)/bin/kubeval
+  make $MYGOBIN/helmV2
+  make $MYGOBIN/helmV3
+  make $MYGOBIN/helm
+  make $MYGOBIN/kubeval
 fi
 
-for goMod in $(find ./plugin -name 'go.mod'); do
+for goMod in $(find ./plugin -name 'go.mod' -not -path "./plugin/untested/*"); do
   d=$(dirname "${goMod}")
-  if [[ "$d" == "./plugin/someteam.example.com/v1/gogetter" ]]; then
-    echo "Skipping broken $d"
-  else
-    scanDir $d
-  fi
+  scanDir $d
 done
 
 if [ $rcAccumulator -ne 0 ]; then
-  echo "FAILURE; exit code $rcAccumulator"
+  echo "FAIL; exit code $rcAccumulator"
   exit 1
 fi
-
-

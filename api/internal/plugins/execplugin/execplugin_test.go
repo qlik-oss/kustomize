@@ -4,18 +4,19 @@
 package execplugin_test
 
 import (
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"sigs.k8s.io/kustomize/api/filesys"
 	. "sigs.k8s.io/kustomize/api/internal/plugins/execplugin"
 	pLdr "sigs.k8s.io/kustomize/api/internal/plugins/loader"
-	"sigs.k8s.io/kustomize/api/k8sdeps/kunstruct"
-	"sigs.k8s.io/kustomize/api/konfig"
+	"sigs.k8s.io/kustomize/api/internal/plugins/utils"
 	fLdr "sigs.k8s.io/kustomize/api/loader"
+	"sigs.k8s.io/kustomize/api/provider"
 	"sigs.k8s.io/kustomize/api/resmap"
-	"sigs.k8s.io/kustomize/api/resource"
-	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
+	"sigs.k8s.io/kustomize/api/types"
 )
 
 func TestExecPluginConfig(t *testing.T) {
@@ -30,10 +31,8 @@ s/$BAR/bar baz/g
 	if err != nil {
 		t.Fatal(err)
 	}
-	rf := resmap.NewFactory(
-		resource.NewFactory(
-			kunstruct.NewKunstructuredFactoryImpl()), nil)
-	v := valtest_test.MakeFakeValidator()
+	pvd := provider.NewDefaultDepProvider()
+	rf := resmap.NewFactory(pvd.GetResourceFactory())
 	pluginConfig := rf.RF().FromMap(
 		map[string]interface{}{
 			"apiVersion": "someteam.example.com/v1",
@@ -45,10 +44,14 @@ s/$BAR/bar baz/g
 			"argsFromFile": "sed-input.txt",
 		})
 
-	p := NewExecPlugin(
-		pLdr.AbsolutePluginPath(
-			konfig.DisabledPluginConfig(),
-			pluginConfig.OrgId()))
+	pluginConfig.RemoveBuildAnnotations()
+	pc := types.DisabledPluginConfig()
+	loader := pLdr.NewLoader(pc, rf, fSys)
+	pluginPath, err := loader.AbsolutePluginPath(pluginConfig.OrgId())
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	p := NewExecPlugin(pluginPath)
 	// Not checking to see if the plugin is executable,
 	// because this test does not run it.
 	// This tests only covers sending configuration
@@ -59,7 +62,9 @@ s/$BAR/bar baz/g
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	p.Config(resmap.NewPluginHelpers(ldr, v, rf), yaml)
+	p.Config(
+		resmap.NewPluginHelpers(ldr, pvd.GetFieldValidator(), rf, pc),
+		yaml)
 
 	expected := "someteam.example.com/v1/sedtransformer/SedTransformer"
 	if !strings.HasSuffix(p.Path(), expected) {
@@ -87,5 +92,34 @@ metadata:
 		p.Args()[4] != "s/$BAR/bar baz/g" ||
 		p.Args()[5] != "\\ \\ \\ " {
 		t.Fatalf("unexpected arg array: %#v", p.Args())
+	}
+}
+
+func TestExecPlugin_ErrIfNotExecutable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("always returns nil on Windows")
+	}
+
+	srcRoot, err := utils.DeterminePluginSrcRoot(filesys.MakeFsOnDisk())
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Test unexecutable plugin
+	unexecutablePlugin := filepath.Join(
+		srcRoot, "builtin", "", "secretgenerator", "SecretGenerator.so")
+	p := NewExecPlugin(unexecutablePlugin)
+	err = p.ErrIfNotExecutable()
+	if err == nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+
+	// Test executable plugin
+	executablePlugin := filepath.Join(
+		srcRoot, "someteam.example.com", "v1", "bashedconfigmap", "BashedConfigMap")
+	p = NewExecPlugin(executablePlugin)
+	err = p.ErrIfNotExecutable()
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
 	}
 }

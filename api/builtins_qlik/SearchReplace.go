@@ -14,6 +14,7 @@ import (
 
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/filters/fieldspec"
+	kutils "sigs.k8s.io/kustomize/api/internal/utils"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/resource"
 	"sigs.k8s.io/kustomize/api/types"
@@ -128,7 +129,10 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 	}
 	for _, r := range resources {
 		if p.fieldSpec.Path == "/" {
-			if newRoot, err := p.searchAndReplace(r.Map(), false); err != nil {
+			if rmap, err := r.Map(); err != nil {
+				p.logger.Printf("error reseource.Map(), error: %v\n", err)
+				return err
+			} else if newRoot, err := p.searchAndReplace(rmap, false); err != nil {
 				p.logger.Printf("error executing transformers.MutateField(), error: %v\n", err)
 				return err
 			} else if newRootMap, newRootIsMap := newRoot.(map[string]interface{}); !newRootIsMap {
@@ -143,7 +147,7 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 				if err := rn.PipeE(fieldspec.Filter{
 					FieldSpec: p.fieldSpec,
 					SetValue: func(n *kyaml.RNode) error {
-						return p.searchAndReplaceRNode(n, isSecretDataTarget(r, p.fieldSpec.PathSlice()))
+						return p.searchAndReplaceRNode(n, isSecretDataTarget(r, kutils.PathSplitter(p.fieldSpec.Path)))
 					},
 				}); err != nil {
 					return nil, err

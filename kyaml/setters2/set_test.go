@@ -4,12 +4,14 @@
 package setters2
 
 import (
-	"encoding/json"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/go-openapi/spec"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/kube-openapi/compat/pkg/validation/spec"
 	"sigs.k8s.io/kustomize/kyaml/openapi"
 	"sigs.k8s.io/kustomize/kyaml/yaml"
 )
@@ -730,13 +732,79 @@ metadata:
     foo: true # {"$ref": "#/definitions/io.k8s.cli.setters.foo"}
  `,
 		},
+		{
+			name:        "set-quoted-value-with-colon",
+			description: "if a value ends in ':', we should accept it",
+			setter:      "app",
+			openapi: `
+openAPI:
+  definitions:
+    io.k8s.cli.setters.app:
+      x-k8s-cli:
+        setter:
+          name: app
+          value: "value:"
+ `,
+			input: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  annotations:
+    app: nginx # {"$ref": "#/definitions/io.k8s.cli.setters.app"}
+ `,
+			expected: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  annotations:
+    app: "value:" # {"$ref": "#/definitions/io.k8s.cli.setters.app"}
+ `,
+		},
+		{
+			name:   "set-quoted-list-values-with-colon",
+			setter: "args",
+			openapi: `
+openAPI:
+  definitions:
+    io.k8s.cli.setters.args:
+      x-k8s-cli:
+        type: array
+        setter:
+          name: args
+          listValues: ["1:", "2:", "3:"]
+ `,
+			input: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  # {"$ref": "#/definitions/io.k8s.cli.setters.args"}
+  replicas:
+    - 4
+    - 5
+ `,
+			expected: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  # {"$ref": "#/definitions/io.k8s.cli.setters.args"}
+  replicas:
+  - "1:"
+  - "2:"
+  - "3:"
+ `,
+		},
 	}
 	for i := range tests {
 		test := tests[i]
 		t.Run(test.name, func(t *testing.T) {
 			// reset the openAPI afterward
 			defer openapi.ResetOpenAPI()
-			initSchema(t, test.openapi)
 
 			// parse the input to be modified
 			r, err := yaml.Parse(test.input)
@@ -745,7 +813,7 @@ metadata:
 			}
 
 			// invoke the setter
-			instance := &Set{Name: test.setter}
+			instance := &Set{Name: test.setter, SettersSchema: SettersSchema(t, test.openapi)}
 			result, err := instance.Filter(r)
 			if !assert.NoError(t, err) {
 				t.FailNow()
@@ -880,7 +948,6 @@ spec:
 		t.Run(test.name, func(t *testing.T) {
 			// reset the openAPI afterward
 			defer openapi.ResetOpenAPI()
-			initSchema(t, test.openapi)
 
 			// parse the input to be modified
 			var inputNodes []*yaml.RNode
@@ -893,7 +960,7 @@ spec:
 			}
 
 			// invoke the setter
-			instance := &Set{Name: test.setter}
+			instance := &Set{Name: test.setter, SettersSchema: SettersSchema(t, test.openapi)}
 			result, err := SetAll(instance).Filter(inputNodes)
 			if !assert.NoError(t, err) {
 				t.FailNow()
@@ -920,44 +987,19 @@ spec:
 }
 
 // initSchema initializes the openAPI with the definitions from s
-func initSchema(t *testing.T, s string) {
-	// parse out the schema from the input openAPI
-	y, err := yaml.Parse(s)
+func SettersSchema(t *testing.T, s string) *spec.Schema {
+	dir, err := ioutil.TempDir("", "")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dir)
+	err = ioutil.WriteFile(filepath.Join(dir, "Krmfile"), []byte(s), 0600)
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
-	// get the field containing the openAPI
-	f := y.Field("openAPI")
-	if !assert.NotNil(t, f) {
-		t.FailNow()
-	}
-	defs, err := f.Value.String()
+	sc, err := openapi.SchemaFromFile(filepath.Join(dir, "Krmfile"))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
-
-	// convert the yaml openAPI to an interface{}
-	// which can be marshalled into json
-	var o interface{}
-	err = yaml.Unmarshal([]byte(defs), &o)
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
-
-	// convert the interface{} into a json string
-	j, err := json.Marshal(o)
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
-
-	// reset the openAPI to clear existing definitions
-	openapi.ResetOpenAPI()
-
-	// add the json schema to the global schema
-	err = openapi.AddSchema(j)
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
+	return sc
 }
 
 func TestSetOpenAPI_Filter(t *testing.T) {
@@ -971,11 +1013,13 @@ func TestSetOpenAPI_Filter(t *testing.T) {
 		description string
 		setBy       string
 		err         string
+		isSet       bool
 	}{
 		{
 			name:   "set-replicas",
 			setter: "replicas",
 			value:  "3",
+			isSet:  true,
 			input: `
 openAPI:
   definitions:
@@ -1023,6 +1067,7 @@ openAPI:
 			name:   "set-annotation-quoted",
 			setter: "replicas",
 			value:  "3",
+			isSet:  true,
 			input: `
 openAPI:
   definitions:
@@ -1048,6 +1093,7 @@ openAPI:
 			setter:      "replicas",
 			value:       "3",
 			description: "hello world",
+			isSet:       true,
 			input: `
 openAPI:
   definitions:
@@ -1094,6 +1140,7 @@ openAPI:
 			setter: "replicas",
 			value:  "3",
 			setBy:  "carl",
+			isSet:  true,
 			input: `
 openAPI:
   definitions:
@@ -1139,6 +1186,7 @@ openAPI:
 			name:   "set-replicas-set-by-empty",
 			setter: "replicas",
 			value:  "3",
+			isSet:  true,
 			input: `
 openAPI:
   definitions:
@@ -1229,7 +1277,6 @@ openAPI:
           enumValues:
             foo: bar
             baz: biz
-          isSet: true
     io.k8s.cli.setters.no-match-2':
       x-k8s-cli:
         setter:
@@ -1242,6 +1289,7 @@ openAPI:
 			name:   "set-replicas-fail",
 			setter: "replicas",
 			value:  "hello",
+			isSet:  true,
 			input: `
 openAPI:
   definitions:
@@ -1272,6 +1320,7 @@ openAPI:
 			name:   "error",
 			setter: "replicas",
 			err:    `setter "replicas" is not found`,
+			isSet:  true,
 			input: `
 openAPI:
   definitions:
@@ -1328,7 +1377,6 @@ openAPI:
           name: args
           listValues: ["2", "3", "4"]
           required: true
-          isSet: true
 `,
 		},
 	}
@@ -1343,7 +1391,7 @@ openAPI:
 			// invoke the setter
 			instance := &SetOpenAPI{
 				Name: test.setter, Value: test.value, ListValues: test.values,
-				SetBy: test.setBy, Description: test.description}
+				SetBy: test.setBy, Description: test.description, IsSet: test.isSet}
 			result, err := instance.Filter(in)
 			if test.err != "" {
 				if !assert.EqualError(t, err, test.err) {

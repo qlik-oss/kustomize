@@ -747,27 +747,9 @@
 <div class="td-content">
 	<h1>crds</h1>
 	<div class="lead">增加对 CRD 的支持。</div>
-	<p>此列表中的每个条目都应该是自定义资源定义（CRD）文件的相对路径。</p>
-<p>该字段的存在是为了让 kustomize 识别用户自定义的 CRD ，并对这些类型中的对象应用适当的转换。</p>
-<p>典型用例：CRD 引用 ConfigMap 对象</p>
-<p>在 kustomization 中，ConfigMap 对象名称可能会通过 <code>namePrefix</code> 、<code>nameSuffix</code> 或 <code>hashing</code> 来更改 CRD 对象中该 ConfigMap 对象的名称，
-引用时需要以相同的方式使用 <code>namePrefix</code> 、 <code>nameSuffix</code> 或 <code>hashing</code> 来进行更新。</p>
-<p>Annotations 可以放入 openAPI 的定义中：</p>
-<ul>
-<li>&ldquo;x-kubernetes-annotation&rdquo;: &quot;&rdquo;</li>
-<li>&ldquo;x-kubernetes-label-selector&rdquo;: &quot;&rdquo;</li>
-<li>&ldquo;x-kubernetes-identity&rdquo;: &quot;&rdquo;</li>
-<li>&ldquo;x-kubernetes-object-ref-api-version&rdquo;: &ldquo;v1&rdquo;,</li>
-<li>&ldquo;x-kubernetes-object-ref-kind&rdquo;: &ldquo;Secret&rdquo;,</li>
-<li>&ldquo;x-kubernetes-object-ref-name-key&rdquo;: &ldquo;name&rdquo;,</li>
-</ul>
-<div class="highlight"><pre style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml"><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span>kustomize.config.k8s.io/v1beta1<span style="color:#f8f8f8;text-decoration:underline">
-</span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span>Kustomization<span style="color:#f8f8f8;text-decoration:underline">
-</span><span style="color:#f8f8f8;text-decoration:underline">
-</span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">crds</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span><span style="color:#f8f8f8;text-decoration:underline"></span>- crds/typeA.yaml<span style="color:#f8f8f8;text-decoration:underline">
-</span><span style="color:#f8f8f8;text-decoration:underline"></span>- crds/typeB.yaml<span style="color:#f8f8f8;text-decoration:underline">
-</span></code></pre></div>
+	<meta http-equiv="refresh" content="0; url=https://kubectl.docs.kubernetes.io/zh/api-reference/kustomization/crds/" />
+<p>Moved to <a href="https://github.com/kubernetes-sigs/cli-experimental">https://github.com/kubernetes-sigs/cli-experimental</a></p>
+
         <div class="section-index">
     
     
@@ -822,7 +804,7 @@
 
 	
 	
-	<div class="text-muted mt-5 pt-3 border-top">最后修改 2020年07月16日: <a  href="https://github.com/kubernetes-sigs/kustomize/commit/f9ee578aed600136133c3232fff03029cdfc526e">Docs: Auto-fix markdownlint issues (f9ee578a)</a>
+	<div class="text-muted mt-5 pt-3 border-top">最后修改 2020年11月25日: <a  href="https://github.com/kubernetes-sigs/kustomize/commit/14eac6020f43cd07a86722f5e937ae8c75873e43">remove duplicate contents and redirect (14eac602)</a>
 </div>
 </div>
 

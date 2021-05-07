@@ -57,6 +57,363 @@ func TestAppend(t *testing.T) {
 	assert.Nil(t, rn)
 }
 
+func TestGetElementByIndex(t *testing.T) {
+	node, err := Parse(`
+- 0
+- 1
+- 2
+`)
+	assert.NoError(t, err)
+
+	rn, err := node.Pipe(GetElementByIndex(0))
+	assert.NoError(t, err)
+	assert.Equal(t, "0\n", assertNoErrorString(t)(rn.String()))
+
+	rn, err = node.Pipe(GetElementByIndex(2))
+	assert.NoError(t, err)
+	assert.Equal(t, "2\n", assertNoErrorString(t)(rn.String()))
+
+	rn, err = node.Pipe(GetElementByIndex(-1))
+	assert.NoError(t, err)
+	assert.Equal(t, "2\n", assertNoErrorString(t)(rn.String()))
+}
+
+func TestGetElementByKey(t *testing.T) {
+	node, err := Parse(`
+- b: c
+- i
+- d: e
+- f: g
+- f: h
+`)
+	assert.NoError(t, err)
+
+	rn, err := node.Pipe(GetElementByKey("b"))
+	assert.NoError(t, err)
+	assert.Equal(t, "b: c\n", assertNoErrorString(t)(rn.String()))
+
+	rn, err = node.Pipe(GetElementByKey("f"))
+	assert.NoError(t, err)
+	assert.Equal(t, "f: g\n", assertNoErrorString(t)(rn.String()))
+}
+
+func TestElementSetter(t *testing.T) {
+	orig := MustParse(`
+- a: b
+- scalarValue
+- c: d
+# null will be removed
+- null
+`)
+
+	// ElementSetter will update node, so make a copy
+	node := orig.Copy()
+	// Remove an element, because ElementSetter.Element is left nil.
+	rn, err := node.Pipe(ElementSetter{Keys: []string{"a"}, Values: []string{"b"}})
+	assert.NoError(t, err)
+	assert.Nil(t, rn)
+	assert.Equal(t, `- scalarValue
+- c: d
+`, assertNoErrorString(t)(node.String()))
+
+	node = orig.Copy()
+	// Nothing happens because no element is matched
+	rn, err = node.Pipe(ElementSetter{Keys: []string{"a"}, Values: []string{"zebra"}})
+	assert.NoError(t, err)
+	assert.Nil(t, rn)
+	assert.Equal(t, `- a: b
+- scalarValue
+- c: d
+`, assertNoErrorString(t)(node.String()))
+
+	node = orig.Copy()
+	// When the element is not found, return an empty ist
+	_, err = node.Pipe(ElementSetter{Keys: []string{"a"}})
+	assert.NoError(t, err)
+	assert.Equal(t, `[]
+`, assertNoErrorString(t)(node.String()))
+
+	_, err = node.Pipe(ElementSetter{Values: []string{"b"}})
+	assert.NoError(t, err)
+	assert.Equal(t, `[]
+`, assertNoErrorString(t)(node.String()))
+
+	node = MustParse(`
+- a: b
+- c: d	
+`)
+	// If given a key and no values, ElementSetter will
+	// change node to be an empty list
+	rn, err = node.Pipe(ElementSetter{Keys: []string{"a"}})
+	assert.NoError(t, err)
+	assert.Nil(t, rn)
+	assert.Equal(t, `[]
+`, assertNoErrorString(t)(node.String()))
+
+	node = MustParse(`
+- a: b
+- c: d	
+`)
+	// Return error because ElementSetter will assume all elements are scalar when
+	// there is only value provided.
+	_, err = node.Pipe(ElementSetter{Values: []string{"b"}})
+	assert.EqualError(t, err, "wrong Node Kind for  expected: ScalarNode was MappingNode: value: {a: b}")
+
+	node = MustParse(`
+- a
+- b
+`)
+	// b is removed since ElementSetter use the value "b" to match the
+	// scalar values.
+	rn, err = node.Pipe(ElementSetter{Values: []string{"b"}})
+	assert.NoError(t, err)
+	assert.Nil(t, rn)
+	assert.Equal(t, `- a
+`, assertNoErrorString(t)(node.String()))
+
+	node = orig.Copy()
+	// Set an element, replacing 'a: b' with 'e: f'
+	newElement := NewMapRNode(&map[string]string{
+		"e": "f",
+	})
+	rn, err = node.Pipe(ElementSetter{
+		Keys:    []string{"a"},
+		Values:  []string{"b"},
+		Element: newElement.YNode(),
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, rn, newElement)
+	assert.Equal(t, `- e: f
+- scalarValue
+- c: d
+`, assertNoErrorString(t)(node.String()))
+
+	node = orig.Copy()
+	// Set an element with scalar, {"a": "b"} to "foo"
+	newElement = NewScalarRNode("foo")
+	rn, err = node.Pipe(ElementSetter{
+		Keys:    []string{"a"},
+		Values:  []string{"b"},
+		Element: newElement.YNode(),
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, rn, newElement)
+	assert.Equal(t, `- foo
+- scalarValue
+- c: d
+`, assertNoErrorString(t)(node.String()))
+
+	node = orig.Copy()
+	// Append an element, {"x": "y"} is not in the list
+	// so the element will be appended.
+	newElement = NewMapRNode(&map[string]string{
+		"e": "f",
+	})
+	rn, err = node.Pipe(ElementSetter{
+		Keys:    []string{"x"},
+		Values:  []string{"y"},
+		Element: newElement.YNode(),
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, rn, newElement)
+	assert.Equal(t, `- a: b
+- scalarValue
+- c: d
+- e: f
+`, assertNoErrorString(t)(node.String()))
+}
+
+func TestElementSetterMultipleKeys(t *testing.T) {
+	orig := MustParse(`
+- a: b
+  c: d
+- scalarValue
+- e: f
+# null will be removed
+- null
+`)
+
+	// ElementSetter will update node, so make a copy
+	node := orig.Copy()
+	// Remove an element using one key-value pair,
+	// because ElementSetter.Element is left nil.
+	rn, err := node.Pipe(ElementSetter{
+		Keys:   []string{"a"},
+		Values: []string{"b"},
+	})
+	assert.NoError(t, err)
+	assert.Nil(t, rn)
+	assert.Equal(t, `- scalarValue
+- e: f
+`, assertNoErrorString(t)(node.String()))
+
+	node = orig.Copy()
+	// Remove an element using multiple key-value pairs,
+	// because ElementSetter.Element is left nil.
+	rn, err = node.Pipe(ElementSetter{
+		Keys:   []string{"a", "c"},
+		Values: []string{"b", "d"},
+	})
+	assert.NoError(t, err)
+	assert.Nil(t, rn)
+	assert.Equal(t, `- scalarValue
+- e: f
+`, assertNoErrorString(t)(node.String()))
+
+	node = orig.Copy()
+	// Should do nothing, because Element is nil
+	// and there is no element which matches all
+	// give key-value pairs
+	rn, err = node.Pipe(ElementSetter{
+		Keys:   []string{"a", "c"},
+		Values: []string{"b", "wrong value"},
+	})
+	assert.NoError(t, err)
+	assert.Nil(t, rn)
+	assert.Equal(t, `- a: b
+  c: d
+- scalarValue
+- e: f
+`, assertNoErrorString(t)(node.String()))
+
+	node = orig.Copy()
+	// Set an element, with a single key-value pair
+	// replacing 'a: b, c: d' with 'g: h'
+	newElement := NewMapRNode(&map[string]string{
+		"g": "h",
+	})
+	rn, err = node.Pipe(ElementSetter{
+		Keys:    []string{"a"},
+		Values:  []string{"b"},
+		Element: newElement.YNode(),
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, rn, newElement)
+	assert.Equal(t, `- g: h
+- scalarValue
+- e: f
+`, assertNoErrorString(t)(node.String()))
+
+	node = orig.Copy()
+	// Set an element, with multiple key-value pairs
+	// replacing 'a: b, c: d' with 'g: h'
+	newElement = NewMapRNode(&map[string]string{
+		"g": "h",
+	})
+	rn, err = node.Pipe(ElementSetter{
+		Keys:    []string{"a", "c"},
+		Values:  []string{"b", "d"},
+		Element: newElement.YNode(),
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, rn, newElement)
+	assert.Equal(t, `- g: h
+- scalarValue
+- e: f
+`, assertNoErrorString(t)(node.String()))
+
+	node = orig.Copy()
+	// Set an element scalar,
+	// {'a: b, c: d'} to "foo"
+	newElement = NewScalarRNode("foo")
+	rn, err = node.Pipe(ElementSetter{
+		Keys:    []string{"a", "c"},
+		Values:  []string{"b", "d"},
+		Element: newElement.YNode(),
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, rn, newElement)
+	assert.Equal(t, `- foo
+- scalarValue
+- e: f
+`, assertNoErrorString(t)(node.String()))
+
+	node = orig.Copy()
+	// Append an element
+	// There is no element which matches all given
+	// key-value pairs, so the element will be appended.
+	newElement = NewMapRNode(&map[string]string{
+		"g": "h",
+	})
+	rn, err = node.Pipe(ElementSetter{
+		Keys:    []string{"a", "c"},
+		Values:  []string{"b", "wrong value"},
+		Element: newElement.YNode(),
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, rn, newElement)
+	assert.Equal(t, `- a: b
+  c: d
+- scalarValue
+- e: f
+- g: h
+`, assertNoErrorString(t)(node.String()))
+}
+
+func TestElementMatcherWithNoValue(t *testing.T) {
+	node, err := Parse(`
+- a: c
+- b: ""
+`)
+	assert.NoError(t, err)
+
+	rn, err := node.Pipe(ElementMatcher{Keys: []string{"b"}})
+	assert.NoError(t, err)
+	assert.Equal(t, "b: \"\"\n", assertNoErrorString(t)(rn.String()))
+
+	rn, err = node.Pipe(ElementMatcher{Keys: []string{"a"}})
+	assert.NoError(t, err)
+	assert.Nil(t, rn)
+
+	rn, err = node.Pipe(ElementMatcher{Keys: []string{"a"}, MatchAnyValue: true})
+	assert.NoError(t, err)
+	assert.Equal(t, "a: c\n", assertNoErrorString(t)(rn.String()))
+
+	_, err = node.Pipe(ElementMatcher{Keys: []string{"a"}, Values: []string{"c"}, MatchAnyValue: true})
+	assert.Errorf(t, err, "Values must be empty when MatchAnyValue is set to true")
+}
+
+func TestElementMatcherMultipleKeys(t *testing.T) {
+	node, err := Parse(`
+- a: b
+  c: d
+- e: f
+`)
+	assert.NoError(t, err)
+
+	// matches all key-value pairs
+	rn, err := node.Pipe(MatchElementList(
+		[]string{"a", "c"}, // keys
+		[]string{"b", "d"}, // values
+	))
+	assert.NoError(t, err)
+	assert.NotEmpty(t, rn)
+
+	// matches one key value pair but not the other
+	rn, err = node.Pipe(MatchElementList(
+		[]string{"a", "c"}, // keys
+		[]string{"b", "f"}, // values
+	))
+	assert.NoError(t, err)
+	assert.Nil(t, rn)
+
+	// matches single given key value pair
+	rn, err = node.Pipe(MatchElementList(
+		[]string{"e"}, // keys
+		[]string{"f"}, // values
+	))
+	assert.NoError(t, err)
+	assert.NotEmpty(t, rn)
+
+	// matching key, but value doesn't match
+	rn, err = node.Pipe(MatchElementList(
+		[]string{"e"}, // keys
+		[]string{"g"}, // values
+	))
+	assert.NoError(t, err)
+	assert.Nil(t, rn)
+}
+
 func TestClearField_Fn(t *testing.T) {
 	node, err := Parse(NodeSampleData)
 	assert.NoError(t, err)
@@ -299,6 +656,18 @@ j: k
   p: q
 `, assertNoErrorString(t)(rn.String()))
 
+	rn, err = node.Pipe(Lookup("a", "b", "0"))
+	assert.NoError(t, err)
+	assert.Equal(t, s, assertNoErrorString(t)(node.String()))
+	assert.Equal(t, `f: g
+`, assertNoErrorString(t)(rn.String()))
+
+	rn, err = node.Pipe(Lookup("a", "b", "-", "h"))
+	assert.NoError(t, err)
+	assert.Equal(t, s, assertNoErrorString(t)(node.String()))
+	assert.Equal(t, `i
+`, assertNoErrorString(t)(rn.String()))
+
 	rn, err = node.Pipe(Lookup("l"))
 	assert.NoError(t, err)
 	assert.Equal(t, s, assertNoErrorString(t)(node.String()))
@@ -343,9 +712,19 @@ j: k
 	assert.NoError(t, err)
 	assert.Equal(t, s, assertNoErrorString(t)(node.String()))
 	assert.Nil(t, rn)
+
+	rn, err = node.Pipe(Lookup("a", "b", "-1"))
+	assert.Errorf(t, err, "array index -1 cannot be negative")
+	assert.Equal(t, s, assertNoErrorString(t)(node.String()))
+	assert.Nil(t, rn)
+
+	rn, err = node.Pipe(Lookup("a", "b", "99"))
+	assert.NoError(t, err)
+	assert.Equal(t, s, assertNoErrorString(t)(node.String()))
+	assert.Nil(t, rn)
 }
 
-func TestSetField_Fn(t *testing.T) {
+func TestFieldSetter(t *testing.T) {
 	// Change field
 	node, err := Parse(`
 foo: baz
@@ -423,6 +802,40 @@ foo
 		assert.Contains(t, err.Error(), "wrong Node Kind")
 	}
 	assert.Nil(t, k)
+}
+
+func TestFieldSetterNumberInKeyRegression(t *testing.T) {
+	node := NewMapRNode(&map[string]string{"river": "mississippi"})
+
+	k, err := FieldSetter{
+		Name:  "forty 2",
+		Value: NewScalarRNode("number key one"),
+	}.Filter(node)
+	assert.NoError(t, err)
+	assert.Equal(t, `number key one
+`, assertNoErrorString(t)(k.String()))
+
+	k, err = FieldSetter{
+		Name:  "fortytwo",
+		Value: NewScalarRNode("number key two"),
+	}.Filter(node)
+	assert.NoError(t, err)
+	assert.Equal(t, `number key two
+`, assertNoErrorString(t)(k.String()))
+
+	k, err = FieldSetter{
+		Name:  "42",
+		Value: NewScalarRNode("number key three"),
+	}.Filter(node)
+	assert.NoError(t, err)
+	assert.Equal(t, `number key three
+`, assertNoErrorString(t)(k.String()))
+
+	assert.Equal(t, `river: mississippi
+forty 2: number key one
+fortytwo: number key two
+42: number key three
+`, assertNoErrorString(t)(node.String()))
 }
 
 func TestSet_Fn(t *testing.T) {

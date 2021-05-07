@@ -12,7 +12,7 @@ import (
 
 func TestNamespacedSecrets(t *testing.T) {
 	th := kusttest_test.MakeHarness(t)
-	th.WriteF("/app/secrets.yaml", `
+	th.WriteF("secrets.yaml", `
 apiVersion: v1
 kind: Secret
 metadata:
@@ -33,7 +33,7 @@ data:
 `)
 
 	// This should find the proper secret.
-	th.WriteF("/app/role.yaml", `
+	th.WriteF("role.yaml", `
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -45,17 +45,17 @@ rules:
   verbs: ["get"]
 `)
 
-	th.WriteK("/app", `
+	th.WriteK(".", `
 resources:
 - secrets.yaml
 - role.yaml
 `)
-	// This validates Fix #1444. This should not be an error anymore -
+	// This validates fix for Issue #1044. This should not be an error anymore -
 	// the secrets have the same name but are in different namespaces.
 	// The ClusterRole (by def) is not in a namespace,
-	// an in this case applies to *any* Secret resource
+	// and in this case applies to *any* Secret resource
 	// named "dummy"
-	m := th.Run("/app", th.MakeDefaultOptions())
+	m := th.Run(".", th.MakeDefaultOptions())
 	th.AssertActualEqualsExpected(m, `
 apiVersion: v1
 data:
@@ -91,13 +91,134 @@ rules:
 `)
 }
 
+func TestNameReferenceDeploymentIssue3489(t *testing.T) {
+	th := kusttest_test.MakeHarness(t)
+	th.WriteK("base", `
+resources:
+- cm.yaml
+- dep.yaml
+`)
+	th.WriteF("base/cm.yaml", `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myMap
+`)
+	th.WriteF("base/dep.yaml", `
+apiVersion: v1
+group: apps
+kind: Deployment
+metadata:
+  name: myDep
+spec:
+  template:
+    spec:
+      containers:
+      - env:
+        - name: CM_FOO
+          valueFrom:
+            configMapKeyRef:
+              key: foo
+              name: myMap
+`)
+	th.WriteK("ov1", `
+resources:
+- ../base
+namePrefix: pp-
+`)
+	th.WriteK("ov2", `
+resources:
+- ../base
+nameSuffix: -ss
+`)
+	th.WriteK("ov3", `
+resources:
+- ../base
+namespace: fred
+nameSuffix: -xx
+`)
+	th.WriteK(".", `
+resources:
+- ../ov1
+- ../ov2
+- ../ov3
+`)
+	m := th.Run(".", th.MakeDefaultOptions())
+	th.AssertActualEqualsExpected(m, `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pp-myMap
+---
+apiVersion: v1
+group: apps
+kind: Deployment
+metadata:
+  name: pp-myDep
+spec:
+  template:
+    spec:
+      containers:
+      - env:
+        - name: CM_FOO
+          valueFrom:
+            configMapKeyRef:
+              key: foo
+              name: pp-myMap
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myMap-ss
+---
+apiVersion: v1
+group: apps
+kind: Deployment
+metadata:
+  name: myDep-ss
+spec:
+  template:
+    spec:
+      containers:
+      - env:
+        - name: CM_FOO
+          valueFrom:
+            configMapKeyRef:
+              key: foo
+              name: myMap-ss
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myMap-xx
+  namespace: fred
+---
+apiVersion: v1
+group: apps
+kind: Deployment
+metadata:
+  name: myDep-xx
+  namespace: fred
+spec:
+  template:
+    spec:
+      containers:
+      - env:
+        - name: CM_FOO
+          valueFrom:
+            configMapKeyRef:
+              key: foo
+              name: myMap-xx
+`)
+}
+
 // TestNameAndNsTransformation validates that NamespaceTransformer,
 // PrefixSuffixTransformer and namereference transformers are
 // able to deal with simultaneous change of namespace and name.
 func TestNameAndNsTransformation(t *testing.T) {
 	th := kusttest_test.MakeHarness(t)
 
-	th.WriteK("/nameandns", `
+	th.WriteK(".", `
 namePrefix: p1-
 nameSuffix: -s1
 namespace: newnamespace
@@ -105,7 +226,7 @@ resources:
 - resources.yaml
 `)
 
-	th.WriteF("/nameandns/resources.yaml", `
+	th.WriteF("resources.yaml", `
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -159,7 +280,7 @@ subjects:
   name: default
   namespace: irrelevant
 ---
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
   name: example
@@ -180,15 +301,30 @@ webhooks:
         name: svc3
         namespace: random
 ---
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: crds.my.org
 ---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: namespace.crds.my.org
+spec:
+  conversion:
+    strategy: Webhook
+    webhook:
+      clientConfig:
+        service:
+          name: crd-svc
+          namespace: random
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: cr1
 ---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: crb1
@@ -197,11 +333,12 @@ subjects:
   name: default
   namespace: irrelevant
 ---
+apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: pv1
 `)
-	m := th.Run("/nameandns", th.MakeDefaultOptions())
+	m := th.Run(".", th.MakeDefaultOptions())
 	th.AssertActualEqualsExpected(m, `
 apiVersion: v1
 kind: ConfigMap
@@ -257,7 +394,7 @@ subjects:
   name: default
   namespace: newnamespace
 ---
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
   name: p1-example-s1
@@ -278,15 +415,30 @@ webhooks:
       namespace: random
   name: example3
 ---
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: crds.my.org
 ---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: namespace.crds.my.org
+spec:
+  conversion:
+    strategy: Webhook
+    webhook:
+      clientConfig:
+        service:
+          name: crd-svc
+          namespace: newnamespace
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: p1-cr1-s1
 ---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: p1-crb1-s1
@@ -295,13 +447,14 @@ subjects:
   name: default
   namespace: newnamespace
 ---
+apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: p1-pv1-s1
 `)
 }
 
-// This serie of constants is used to prove the need of
+// This series of constants is used to prove the need of
 // the namespace field in the objref field of the var declaration.
 // The following tests demonstrate that it creates umbiguous variable
 // declaration if two entities of the kind with the same name
@@ -466,10 +619,12 @@ spec:
 // not specified
 func TestVariablesAmbiguous(t *testing.T) {
 	th := kusttest_test.MakeHarness(t)
-	th.WriteK("/namespaceNeedInVar/myapp", namespaceNeedInVarMyApp)
-	th.WriteF("/namespaceNeedInVar/myapp/elasticsearch-dev-service.yaml", namespaceNeedInVarDevResources)
-	th.WriteF("/namespaceNeedInVar/myapp/elasticsearch-test-service.yaml", namespaceNeedInVarTestResources)
-	err := th.RunWithErr("/namespaceNeedInVar/myapp", th.MakeDefaultOptions())
+	th.WriteK(".", namespaceNeedInVarMyApp)
+	th.WriteF("elasticsearch-dev-service.yaml",
+		namespaceNeedInVarDevResources)
+	th.WriteF("elasticsearch-test-service.yaml",
+		namespaceNeedInVarTestResources)
+	err := th.RunWithErr(".", th.MakeDefaultOptions())
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -523,16 +678,17 @@ vars:
 // and resources into multiple kustomization context/folders instead of one.
 func TestVariablesAmbiguousWorkaround(t *testing.T) {
 	th := kusttest_test.MakeHarness(t)
-	th.WriteK("/namespaceNeedInVar/dev", namespaceNeedInVarDevFolder)
-	th.WriteF("/namespaceNeedInVar/dev/elasticsearch-dev-service.yaml", namespaceNeedInVarDevResources)
-	th.WriteK("/namespaceNeedInVar/test", namespaceNeedInVarTestFolder)
-	th.WriteF("/namespaceNeedInVar/test/elasticsearch-test-service.yaml", namespaceNeedInVarTestResources)
-	th.WriteK("/namespaceNeedInVar/workaround", `
+	opts := th.MakeDefaultOptions()
+	th.WriteK("dev", namespaceNeedInVarDevFolder)
+	th.WriteF("dev/elasticsearch-dev-service.yaml", namespaceNeedInVarDevResources)
+	th.WriteK("test", namespaceNeedInVarTestFolder)
+	th.WriteF("test/elasticsearch-test-service.yaml", namespaceNeedInVarTestResources)
+	th.WriteK("workaround", `
 resources:
 - ../dev
 - ../test
 `)
-	m := th.Run("/namespaceNeedInVar/workaround", th.MakeDefaultOptions())
+	m := th.Run("workaround", opts)
 	th.AssertActualEqualsExpected(m, namespaceNeedInVarExpectedOutput)
 }
 
@@ -579,9 +735,68 @@ vars:
 // to the variable declarations allows to disambiguate the variables.
 func TestVariablesDisambiguatedWithNamespace(t *testing.T) {
 	th := kusttest_test.MakeHarness(t)
-	th.WriteK("/namespaceNeedInVar/myapp", namespaceNeedInVarMyAppWithNamespace)
-	th.WriteF("/namespaceNeedInVar/myapp/elasticsearch-dev-service.yaml", namespaceNeedInVarDevResources)
-	th.WriteF("/namespaceNeedInVar/myapp/elasticsearch-test-service.yaml", namespaceNeedInVarTestResources)
-	m := th.Run("/namespaceNeedInVar/myapp", th.MakeDefaultOptions())
+	th.WriteK(".", namespaceNeedInVarMyAppWithNamespace)
+	th.WriteF("elasticsearch-dev-service.yaml", namespaceNeedInVarDevResources)
+	th.WriteF("elasticsearch-test-service.yaml", namespaceNeedInVarTestResources)
+	m := th.Run(".", th.MakeDefaultOptions())
 	th.AssertActualEqualsExpected(m, namespaceNeedInVarExpectedOutput)
+}
+
+// TestAddNamePrefixWithNamespace tests that adding a name prefix works within
+// namespaces other than the default namespace.
+// Test for issue #3430
+func TestAddNamePrefixWithNamespace(t *testing.T) {
+	th := kusttest_test.MakeHarness(t)
+
+	th.WriteF("serviceaccount.yaml", `
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+`)
+
+	th.WriteF("clusterrolebinding.yaml", `
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: iter8-monitoring
+`)
+
+	th.WriteK(".", `
+namePrefix: iter8-
+namespace: iter8-monitoring
+resources:
+- clusterrolebinding.yaml
+- serviceaccount.yaml
+`)
+
+	m := th.Run(".", th.MakeDefaultOptions())
+	th.AssertActualEqualsExpected(m, `
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: iter8-prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: iter8-prometheus
+  namespace: iter8-monitoring
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: iter8-prometheus
+  namespace: iter8-monitoring
+`)
 }

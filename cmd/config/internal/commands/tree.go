@@ -9,6 +9,7 @@ import (
 
 	"sigs.k8s.io/kustomize/cmd/config/ext"
 	"sigs.k8s.io/kustomize/cmd/config/internal/generateddocs/commands"
+	"sigs.k8s.io/kustomize/cmd/config/runner"
 	"sigs.k8s.io/kustomize/kyaml/kio/filters"
 
 	"github.com/spf13/cobra"
@@ -19,14 +20,14 @@ import (
 func GetTreeRunner(name string) *TreeRunner {
 	r := &TreeRunner{}
 	c := &cobra.Command{
-		Use:     "tree DIR",
+		Use:     "tree [DIR]",
 		Short:   commands.TreeShort,
 		Long:    commands.TreeLong,
 		Example: commands.TreeExamples,
 		RunE:    r.runE,
 		Args:    cobra.MaximumNArgs(1),
 	}
-	fixDocs(name, c)
+	runner.FixDocs(name, c)
 
 	// TODO(pwittrock): Figure out if these are the right things to expose, and consider making it
 	// a list of options instead of individual flags
@@ -77,21 +78,19 @@ type TreeRunner struct {
 func (r *TreeRunner) runE(c *cobra.Command, args []string) error {
 	var input kio.Reader
 	var root = "."
-	openAPIFileName, err := ext.OpenAPIFileName()
-	if err != nil {
-		return err
+	if len(args) == 0 {
+		args = append(args, root)
 	}
-	matchFilesGlob := append([]string{openAPIFileName}, kio.DefaultMatch...)
-	if len(args) == 1 {
-		root = filepath.Clean(args[0])
-		input = kio.LocalPackageReader{PackagePath: args[0], MatchFilesGlob: matchFilesGlob}
-	} else {
+	if args[0] == "-" {
 		input = &kio.ByteReader{Reader: c.InOrStdin()}
+	} else {
+		root = filepath.Clean(args[0])
+		input = kio.LocalPackageReader{PackagePath: args[0]}
 	}
 
 	var fields []kio.TreeWriterField
 	for _, field := range r.fields {
-		path, err := parseFieldPath(field)
+		path, err := runner.ParseFieldPath(field)
 		if err != nil {
 			return err
 		}
@@ -155,7 +154,7 @@ func (r *TreeRunner) runE(c *cobra.Command, args []string) error {
 		ExcludeNonLocalConfig: r.excludeNonLocal,
 	}}
 
-	return handleError(c, kio.Pipeline{
+	return runner.HandleError(c, kio.Pipeline{
 		Inputs:  []kio.Reader{input},
 		Filters: fltrs,
 		Outputs: []kio.Writer{kio.TreeWriter{
@@ -163,7 +162,7 @@ func (r *TreeRunner) runE(c *cobra.Command, args []string) error {
 			Writer:          c.OutOrStdout(),
 			Fields:          fields,
 			Structure:       kio.TreeStructure(r.structure),
-			OpenAPIFileName: openAPIFileName,
+			OpenAPIFileName: ext.KRMFileName(),
 		}},
 	}.Execute())
 }

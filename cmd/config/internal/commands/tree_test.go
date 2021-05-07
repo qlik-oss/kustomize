@@ -15,6 +15,84 @@ import (
 	"sigs.k8s.io/kustomize/cmd/config/internal/commands"
 )
 
+func TestTreeCommandDefaultCurDir_files(t *testing.T) {
+	d, err := ioutil.TempDir("", "kustomize-tree-test")
+	defer os.RemoveAll(d)
+	if !assert.NoError(t, err) {
+		return
+	}
+	err = os.Chdir(d)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	err = ioutil.WriteFile(filepath.Join(d, "f1.yaml"), []byte(`
+apiVersion: v1
+kind: Abstraction
+metadata:
+  name: foo
+  configFn:
+    container:
+      image: gcr.io/example/reconciler:v1
+  annotations:
+    config.kubernetes.io/local-config: "true"
+spec:
+  replicas: 1
+---
+kind: Deployment
+metadata:
+  labels:
+    app: nginx2
+  name: foo
+  annotations:
+    app: nginx2
+spec:
+  replicas: 1
+---
+kind: Service
+metadata:
+  name: foo
+  annotations:
+    app: nginx
+spec:
+  selector:
+    app: nginx
+`), 0600)
+	if !assert.NoError(t, err) {
+		return
+	}
+	err = ioutil.WriteFile(filepath.Join(d, "f2.yaml"), []byte(`kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: bar
+  annotations:
+    app: nginx
+spec:
+  replicas: 3
+`), 0600)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	// fmt the files
+	b := &bytes.Buffer{}
+	r := commands.GetTreeRunner("")
+	r.Command.SetArgs([]string{})
+	r.Command.SetOut(b)
+	if !assert.NoError(t, r.Command.Execute()) {
+		return
+	}
+
+	if !assert.Equal(t, fmt.Sprintf(`.
+├── [f1.yaml]  Deployment foo
+├── [f1.yaml]  Service foo
+└── [f2.yaml]  Deployment bar
+`), b.String()) {
+		return
+	}
+}
+
 // TestCmd_files verifies fmt reads the files and filters them
 func TestTreeCommand_files(t *testing.T) {
 	d, err := ioutil.TempDir("", "kustomize-tree-test")
@@ -84,6 +162,52 @@ spec:
 	if !assert.Equal(t, fmt.Sprintf(`%s
 ├── [f1.yaml]  Deployment foo
 ├── [f1.yaml]  Service foo
+└── [f2.yaml]  Deployment bar
+`, d), b.String()) {
+		return
+	}
+}
+
+func TestTreeCommand_Kustomization(t *testing.T) {
+	d, err := ioutil.TempDir("", "kustomize-tree-test")
+	defer os.RemoveAll(d)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	err = ioutil.WriteFile(filepath.Join(d, "f2.yaml"), []byte(`kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: bar
+  annotations:
+    app: nginx
+spec:
+  replicas: 3
+`), 0600)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	err = ioutil.WriteFile(filepath.Join(d, "Kustomization"), []byte(`apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- f2.yaml
+`), 0600)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	// fmt the files
+	b := &bytes.Buffer{}
+	r := commands.GetTreeRunner("")
+	r.Command.SetArgs([]string{d})
+	r.Command.SetOut(b)
+	if !assert.NoError(t, r.Command.Execute()) {
+		return
+	}
+
+	if !assert.Equal(t, fmt.Sprintf(`%s
 └── [f2.yaml]  Deployment bar
 `, d), b.String()) {
 		return
@@ -182,11 +306,9 @@ openAPI:
 	}
 
 	if !assert.Equal(t, fmt.Sprintf(`%s
-├── [Krmfile]  Krmfile mainpkg
 ├── [f1.yaml]  Deployment foo
 ├── [f1.yaml]  Service foo
 └── Pkg: subpkg
-    ├── [Krmfile]  Krmfile subpkg
     └── [f2.yaml]  Deployment bar
 `, d), b.String()) {
 		return
@@ -197,7 +319,7 @@ func TestTreeCommand_stdin(t *testing.T) {
 	// fmt the files
 	b := &bytes.Buffer{}
 	r := commands.GetTreeRunner("")
-	r.Command.SetArgs([]string{})
+	r.Command.SetArgs([]string{"-"})
 	r.Command.SetIn(bytes.NewBufferString(`apiVersion: extensions/v1
 kind: Deployment
 metadata:

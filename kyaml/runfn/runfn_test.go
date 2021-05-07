@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -38,6 +39,13 @@ replace: StatefulSet
 `
 )
 
+func currentUser() (*user.User, error) {
+	return &user.User{
+		Uid: "1",
+		Gid: "2",
+	}, nil
+}
+
 func TestRunFns_init(t *testing.T) {
 	instance := RunFns{}
 	instance.init()
@@ -59,8 +67,38 @@ kind:
 	if !assert.NoError(t, err) {
 		return
 	}
-	filter, _ := instance.functionFilterProvider(spec, api)
-	c := container.NewContainer(runtimeutil.ContainerSpec{Image: "example.com:version"})
+	filter, _ := instance.functionFilterProvider(spec, api, currentUser)
+	c := container.NewContainer(runtimeutil.ContainerSpec{Image: "example.com:version"}, "nobody")
+	cf := &c
+	cf.Exec.FunctionConfig = api
+	assert.Equal(t, cf, filter)
+}
+
+func TestRunFns_initAsCurrentUser(t *testing.T) {
+	instance := RunFns{
+		AsCurrentUser: true,
+	}
+	instance.init()
+	if !assert.Equal(t, instance.Input, os.Stdin) {
+		t.FailNow()
+	}
+	if !assert.Equal(t, instance.Output, os.Stdout) {
+		t.FailNow()
+	}
+
+	api, err := yaml.Parse(`apiVersion: apps/v1
+kind: 
+`)
+	spec := runtimeutil.FunctionSpec{
+		Container: runtimeutil.ContainerSpec{
+			Image: "example.com:version",
+		},
+	}
+	if !assert.NoError(t, err) {
+		return
+	}
+	filter, _ := instance.functionFilterProvider(spec, api, currentUser)
+	c := container.NewContainer(runtimeutil.ContainerSpec{Image: "example.com:version"}, "1:2")
 	cf := &c
 	cf.Exec.FunctionConfig = api
 	assert.Equal(t, cf, filter)
@@ -90,8 +128,8 @@ kind:
 	if !assert.NoError(t, err) {
 		return
 	}
-	filter, _ := instance.functionFilterProvider(spec, api)
-	c := container.NewContainer(runtimeutil.ContainerSpec{Image: "example.com:version"})
+	filter, _ := instance.functionFilterProvider(spec, api, currentUser)
+	c := container.NewContainer(runtimeutil.ContainerSpec{Image: "example.com:version"}, "nobody")
 	cf := &c
 	cf.Exec.FunctionConfig = api
 	cf.Exec.GlobalScope = true
@@ -696,6 +734,94 @@ metadata:
 	}
 }
 
+func TestRunFns_sortFns(t *testing.T) {
+	testCases := []struct {
+		name           string
+		nodes          []*yaml.RNode
+		expectedImages []string
+		expectedErrMsg string
+	}{
+		{
+			name: "multiple functions in the same file are ordered by index",
+			nodes: []*yaml.RNode{
+				yaml.MustParse(`
+metadata:
+  annotations:
+    config.kubernetes.io/path: functions.yaml
+    config.kubernetes.io/index: 1
+    config.kubernetes.io/function: |
+      container:
+        image: a
+`),
+				yaml.MustParse(`
+metadata:
+  annotations:
+    config.kubernetes.io/path: functions.yaml
+    config.kubernetes.io/index: 0
+    config.kubernetes.io/function: |
+      container:
+        image: b
+`),
+			},
+			expectedImages: []string{"b", "a"},
+		},
+		{
+			name: "non-integer value in index annotation is an error",
+			nodes: []*yaml.RNode{
+				yaml.MustParse(`
+metadata:
+  annotations:
+    config.kubernetes.io/path: functions.yaml
+    config.kubernetes.io/index: 0
+    config.kubernetes.io/function: |
+      container:
+        image: a
+`),
+				yaml.MustParse(`
+metadata:
+  annotations:
+    config.kubernetes.io/path: functions.yaml
+    config.kubernetes.io/index: abc
+    config.kubernetes.io/function: |
+      container:
+        image: b
+`),
+			},
+			expectedErrMsg: "strconv.Atoi: parsing \"abc\": invalid syntax",
+		},
+	}
+
+	for i := range testCases {
+		test := testCases[i]
+		t.Run(test.name, func(t *testing.T) {
+			packageBuff := &kio.PackageBuffer{
+				Nodes: test.nodes,
+			}
+
+			err := sortFns(packageBuff)
+			if test.expectedErrMsg != "" {
+				if !assert.Error(t, err) {
+					t.FailNow()
+				}
+				assert.Equal(t, test.expectedErrMsg, err.Error())
+				return
+			}
+
+			if !assert.NoError(t, err) {
+				t.FailNow()
+			}
+
+			var images []string
+			for _, n := range packageBuff.Nodes {
+				spec := runtimeutil.GetFunctionSpec(n)
+				images = append(images, spec.Container.Image)
+			}
+
+			assert.Equal(t, test.expectedImages, images)
+		})
+	}
+}
+
 func TestRunFns_network(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -863,7 +989,7 @@ replace: StatefulSet
 	var fltrs []*TestFilter
 	instance := RunFns{
 		Path: dir,
-		functionFilterProvider: func(f runtimeutil.FunctionSpec, node *yaml.RNode) (kio.Filter, error) {
+		functionFilterProvider: func(f runtimeutil.FunctionSpec, node *yaml.RNode, currentUser currentUserFunc) (kio.Filter, error) {
 			tf := &TestFilter{
 				Exit: errors.Errorf("message: %s", f.Container.Image),
 			}
@@ -1042,6 +1168,73 @@ func TestCmd_Execute_enableLogSteps(t *testing.T) {
 	assert.Equal(t, "Running unknown-type function\n", logs.String())
 }
 
+func getGeneratorFilterProvider(t *testing.T) func(runtimeutil.FunctionSpec, *yaml.RNode, currentUserFunc) (kio.Filter, error) {
+	return func(f runtimeutil.FunctionSpec, node *yaml.RNode, currentUser currentUserFunc) (kio.Filter, error) {
+		return kio.FilterFunc(func(items []*yaml.RNode) ([]*yaml.RNode, error) {
+			if f.Container.Image == "generate" {
+				node, err := yaml.Parse("kind: generated")
+				if !assert.NoError(t, err) {
+					t.FailNow()
+				}
+				return append(items, node), nil
+			}
+			return items, nil
+		}), nil
+	}
+}
+func TestRunFns_ContinueOnEmptyResult(t *testing.T) {
+	fn1, err := yaml.Parse(`
+kind: fakefn
+metadata:
+  annotations:
+    config.kubernetes.io/function: |
+      container:
+        image: pass
+`)
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	fn2, err := yaml.Parse(`
+kind: fakefn
+metadata:
+  annotations:
+    config.kubernetes.io/function: |
+      container:
+        image: generate
+`)
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+
+	var test = []struct {
+		ContinueOnEmptyResult bool
+		ExpectedOutput        string
+	}{
+		{
+			ContinueOnEmptyResult: false,
+			ExpectedOutput:        "",
+		},
+		{
+			ContinueOnEmptyResult: true,
+			ExpectedOutput:        "kind: generated\n",
+		},
+	}
+	for i := range test {
+		ouputBuffer := bytes.Buffer{}
+		instance := RunFns{
+			Input:                  bytes.NewReader([]byte{}),
+			Output:                 &ouputBuffer,
+			Functions:              []*yaml.RNode{fn1, fn2},
+			functionFilterProvider: getGeneratorFilterProvider(t),
+			ContinueOnEmptyResult:  test[i].ContinueOnEmptyResult,
+		}
+		if !assert.NoError(t, instance.Execute()) {
+			t.FailNow()
+		}
+		assert.Equal(t, test[i].ExpectedOutput, ouputBuffer.String())
+	}
+}
+
 // setupTest initializes a temp test directory containing test data
 func setupTest(t *testing.T) string {
 	dir, err := ioutil.TempDir("", "kustomize-kyaml-test")
@@ -1069,8 +1262,8 @@ func setupTest(t *testing.T) string {
 // getFilterProvider fakes the creation of a filter, replacing the ContainerFiler with
 // a filter to s/kind: Deployment/kind: StatefulSet/g.
 // this can be used to simulate running a filter.
-func getFilterProvider(t *testing.T) func(runtimeutil.FunctionSpec, *yaml.RNode) (kio.Filter, error) {
-	return func(f runtimeutil.FunctionSpec, node *yaml.RNode) (kio.Filter, error) {
+func getFilterProvider(t *testing.T) func(runtimeutil.FunctionSpec, *yaml.RNode, currentUserFunc) (kio.Filter, error) {
+	return func(f runtimeutil.FunctionSpec, node *yaml.RNode, currentUser currentUserFunc) (kio.Filter, error) {
 		// parse the filter from the input
 		filter := yaml.YFilter{}
 		b := &bytes.Buffer{}

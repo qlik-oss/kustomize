@@ -3,6 +3,10 @@
 
 package merge2_test
 
+import (
+	"sigs.k8s.io/kustomize/kyaml/yaml"
+)
+
 var listTestCases = []testCase{
 	{description: `strategic merge patch delete 1`,
 		source: `
@@ -38,6 +42,9 @@ spec:
       - name: foo2
       - name: foo3
 `,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListAppend,
+		},
 	},
 	{description: `strategic merge patch delete 2`,
 		source: `
@@ -73,8 +80,48 @@ spec:
       - name: foo1
       - name: foo2
 `,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListAppend,
+		},
 	},
-	{description: `merge k8s deployment containers`,
+	{description: `merge k8s deployment containers - prepend`,
+		source: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: foo1
+      - name: foo2
+      - name: foo3
+`,
+		dest: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: foo0
+`,
+		expected: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: foo1
+      - name: foo2
+      - name: foo3
+      - name: foo0
+      `,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListPrepend,
+		},
+	},
+	{description: `merge k8s deployment containers - append`,
 		source: `
 apiVersion: apps/v1
 kind: Deployment
@@ -107,8 +154,11 @@ spec:
       - name: foo2
       - name: foo3
 `,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListAppend,
+		},
 	},
-	{description: `merge k8s deployment volumes`,
+	{description: `merge k8s deployment volumes - append`,
 		source: `
 apiVersion: apps/v1
 kind: Deployment
@@ -140,6 +190,149 @@ spec:
       - name: foo1
       - name: foo2
       - name: foo3
+`,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListAppend,
+		},
+	},
+	{description: `merge k8s deployment volumes - prepend`,
+		source: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      volumes:
+      - name: foo1
+      - name: foo2
+      - name: foo3
+`,
+		dest: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      volumes:
+      - name: foo0
+`,
+		expected: `
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      volumes:
+      - name: foo1
+      - name: foo2
+      - name: foo3
+      - name: foo0
+`,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListPrepend,
+		},
+	},
+	{description: `merge k8s deployment containers -- $patch directive`,
+		source: `
+    apiVersion: apps/v1
+    kind: Deployment
+    spec:
+      template:
+        spec:
+          containers:
+          - name: foo1
+          - name: foo2
+          - name: foo3
+          - $patch: merge
+`,
+		dest: `
+    apiVersion: apps/v1
+    kind: Deployment
+    spec:
+      template:
+        spec:
+          containers:
+          - name: foo4
+          - name: foo5
+`,
+		expected: `
+    apiVersion: apps/v1
+    kind: Deployment
+    spec:
+      template:
+        spec:
+          containers:
+          - name: foo1
+          - name: foo2
+          - name: foo3
+          - name: foo4
+          - name: foo5
+`,
+	},
+	{description: `replace k8s deployment containers -- $patch directive`,
+		source: `
+    apiVersion: apps/v1
+    kind: Deployment
+    spec:
+      template:
+        spec:
+          containers:
+          - name: foo1
+          - name: foo2
+          - name: foo3
+          - $patch: replace
+`,
+		dest: `
+    apiVersion: apps/v1
+    kind: Deployment
+    spec:
+      template:
+        spec:
+          containers:
+          - name: foo4
+          - name: foo5
+`,
+		expected: `
+    apiVersion: apps/v1
+    kind: Deployment
+    spec:
+      template:
+        spec:
+          containers:
+          - name: foo1
+          - name: foo2
+          - name: foo3
+`,
+	},
+	{description: `remove k8s deployment containers -- $patch directive`,
+		source: `
+    apiVersion: apps/v1
+    kind: Deployment
+    spec:
+      template:
+        spec:
+          containers:
+          - name: foo1
+          - name: foo2
+          - name: foo3
+          - $patch: delete
+`,
+		dest: `
+    apiVersion: apps/v1
+    kind: Deployment
+    spec:
+      template:
+        spec:
+          containers:
+          - name: foo4
+          - name: foo5
+`,
+		expected: `
+    apiVersion: apps/v1
+    kind: Deployment
+    spec:
+      template:
+        spec: {}
 `,
 	},
 
@@ -164,6 +357,9 @@ items:
 - 2
 - 3
 `,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListAppend,
+		},
 	},
 
 	{description: `replace List -- missing from dest`,
@@ -184,6 +380,9 @@ items:
 - 2
 - 3
 `,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListAppend,
+		},
 	},
 
 	//
@@ -211,6 +410,9 @@ items:
 - 2
 - 3
 `,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListAppend,
+		},
 	},
 
 	//
@@ -234,6 +436,9 @@ items:
 - 2
 - 3
 `,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListAppend,
+		},
 	},
 
 	//
@@ -254,6 +459,9 @@ items:
 		expected: `
 kind: Deployment
 `,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListAppend,
+		},
 	},
 
 	//
@@ -275,5 +483,8 @@ items:
 kind: Deployment
 items: []
 `,
+		mergeOptions: yaml.MergeOptions{
+			ListIncreaseDirection: yaml.MergeOptionsListAppend,
+		},
 	},
 }

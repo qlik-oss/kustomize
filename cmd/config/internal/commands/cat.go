@@ -4,13 +4,16 @@
 package commands
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/kustomize/cmd/config/ext"
 	"sigs.k8s.io/kustomize/cmd/config/internal/generateddocs/commands"
+	"sigs.k8s.io/kustomize/cmd/config/runner"
 	"sigs.k8s.io/kustomize/kyaml/errors"
 	"sigs.k8s.io/kustomize/kyaml/kio"
 	"sigs.k8s.io/kustomize/kyaml/kio/filters"
@@ -28,7 +31,7 @@ func GetCatRunner(name string) *CatRunner {
 		RunE:    r.runE,
 		Args:    cobra.MaximumNArgs(1),
 	}
-	fixDocs(name, c)
+	runner.FixDocs(name, c)
 	c.Flags().BoolVar(&r.Format, "format", true,
 		"format resource config yaml before printing.")
 	c.Flags().BoolVar(&r.KeepAnnotations, "annotate", false,
@@ -93,29 +96,35 @@ func (r *CatRunner) runE(c *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		return handleError(c, kio.Pipeline{Inputs: []kio.Reader{input}, Filters: r.catFilters(), Outputs: outputs}.Execute())
+		return runner.HandleError(c, kio.Pipeline{Inputs: []kio.Reader{input}, Filters: r.catFilters(), Outputs: outputs}.Execute())
 	}
 
-	e := executeCmdOnPkgs{
-		writer:             writer,
-		needOpenAPI:        false,
-		recurseSubPackages: r.RecurseSubPackages,
-		cmdRunner:          r,
-		rootPkgPath:        args[0],
-		skipPkgPathPrint:   true,
+	out := &bytes.Buffer{}
+
+	e := runner.ExecuteCmdOnPkgs{
+		Writer:             out,
+		NeedOpenAPI:        false,
+		RecurseSubPackages: r.RecurseSubPackages,
+		CmdRunner:          r,
+		RootPkgPath:        args[0],
+		SkipPkgPathPrint:   true,
 	}
 
-	return e.execute()
-}
-
-func (r *CatRunner) executeCmd(w io.Writer, pkgPath string) error {
-	openAPIFileName, err := ext.OpenAPIFileName()
+	err := e.Execute()
 	if err != nil {
 		return err
 	}
 
-	input := kio.LocalPackageReader{PackagePath: pkgPath, PackageFileName: openAPIFileName}
-	outputs, err := r.out(w)
+	res := strings.TrimSuffix(out.String(), "---")
+	fmt.Fprintf(writer, "%s", res)
+
+	return nil
+}
+
+func (r *CatRunner) ExecuteCmd(w io.Writer, pkgPath string) error {
+	input := kio.LocalPackageReader{PackagePath: pkgPath, PackageFileName: ext.KRMFileName()}
+	out := &bytes.Buffer{}
+	outputs, err := r.out(out)
 	if err != nil {
 		return err
 	}
@@ -129,12 +138,14 @@ func (r *CatRunner) executeCmd(w io.Writer, pkgPath string) error {
 		// return err if there is only package
 		if !r.RecurseSubPackages {
 			return err
-		} else {
-			// print error message and continue if there are multiple packages to annotate
-			fmt.Fprintf(w, "%s in package %q\n", err.Error(), pkgPath)
 		}
+		// print error message and continue if there are multiple packages to annotate
+		fmt.Fprintf(w, "%s in package %q\n", err.Error(), pkgPath)
 	}
-	fmt.Fprintf(w, "---")
+	fmt.Fprint(w, out.String())
+	if out.String() != "" {
+		fmt.Fprint(w, "---")
+	}
 	return nil
 }
 

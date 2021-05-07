@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -83,13 +85,22 @@ type RunFns struct {
 	// functionFilterProvider provides a filter to perform the function.
 	// this is a variable so it can be mocked in tests
 	functionFilterProvider func(
-		filter runtimeutil.FunctionSpec, api *yaml.RNode) (kio.Filter, error)
+		filter runtimeutil.FunctionSpec, api *yaml.RNode, currentUser currentUserFunc) (kio.Filter, error)
 
-	// User username used to run the application in container,
-	User runtimeutil.ContainerUser
+	// AsCurrentUser is a boolean to indicate whether docker container should use
+	// the uid and gid that run the command
+	AsCurrentUser bool
 
 	// Env contains environment variables that will be exported to container
 	Env []string
+
+	// ContinueOnEmptyResult configures what happens when the underlying pipeline
+	// returns an empty result.
+	// If it is false (default), subsequent functions will be skipped and the
+	// result will be returned immediately.
+	// If it is true, the empty result will be provided as input to the next
+	// function in the list.
+	ContinueOnEmptyResult bool
 }
 
 // Execute runs the command
@@ -181,9 +192,10 @@ func (r RunFns) runFunctions(
 
 	var err error
 	pipeline := kio.Pipeline{
-		Inputs:  []kio.Reader{input},
-		Filters: fltrs,
-		Outputs: outputs,
+		Inputs:                []kio.Reader{input},
+		Filters:               fltrs,
+		Outputs:               outputs,
+		ContinueOnEmptyResult: r.ContinueOnEmptyResult,
 	}
 	if r.LogSteps {
 		err = pipeline.ExecuteWithCallback(func(op kio.Filter) {
@@ -241,7 +253,10 @@ func (r RunFns) getFunctionsFromInput(nodes []*yaml.RNode) ([]kio.Filter, error)
 	if err != nil {
 		return nil, err
 	}
-	sortFns(buff)
+	err = sortFns(buff)
+	if err != nil {
+		return nil, err
+	}
 	return r.getFunctionFilters(false, buff.Nodes...)
 }
 
@@ -299,13 +314,10 @@ func (r RunFns) getFunctionFilters(global bool, fns ...*yaml.RNode) (
 			// TODO(eddiezane): Provide error info about which function needs the network
 			return fltrs, errors.Errorf("network required but not enabled with --network")
 		}
-		// command line username and envs has higher priority
-		if !r.User.IsEmpty() {
-			spec.Container.User = r.User
-		}
+		// merge envs from imperative and declarative
 		spec.Container.Env = r.mergeContainerEnv(spec.Container.Env)
 
-		c, err := r.functionFilterProvider(*spec, api)
+		c, err := r.functionFilterProvider(*spec, api, user.Current)
 		if err != nil {
 			return nil, err
 		}
@@ -323,12 +335,33 @@ func (r RunFns) getFunctionFilters(global bool, fns ...*yaml.RNode) (
 }
 
 // sortFns sorts functions so that functions with the longest paths come first
-func sortFns(buff *kio.PackageBuffer) {
+func sortFns(buff *kio.PackageBuffer) error {
+	var outerErr error
 	// sort the nodes so that we traverse them depth first
 	// functions deeper in the file system tree should be run first
 	sort.Slice(buff.Nodes, func(i, j int) bool {
 		mi, _ := buff.Nodes[i].GetMeta()
 		pi := filepath.ToSlash(mi.Annotations[kioutil.PathAnnotation])
+
+		mj, _ := buff.Nodes[j].GetMeta()
+		pj := filepath.ToSlash(mj.Annotations[kioutil.PathAnnotation])
+
+		// If the path is the same, we decide the ordering based on the
+		// index annotation.
+		if pi == pj {
+			iIndex, err := strconv.Atoi(mi.Annotations[kioutil.IndexAnnotation])
+			if err != nil {
+				outerErr = err
+				return false
+			}
+			jIndex, err := strconv.Atoi(mj.Annotations[kioutil.IndexAnnotation])
+			if err != nil {
+				outerErr = err
+				return false
+			}
+			return iIndex < jIndex
+		}
+
 		if filepath.Base(path.Dir(pi)) == "functions" {
 			// don't count the functions dir, the functions are scoped 1 level above
 			pi = filepath.Dir(path.Dir(pi))
@@ -336,8 +369,6 @@ func sortFns(buff *kio.PackageBuffer) {
 			pi = filepath.Dir(pi)
 		}
 
-		mj, _ := buff.Nodes[j].GetMeta()
-		pj := filepath.ToSlash(mj.Annotations[kioutil.PathAnnotation])
 		if filepath.Base(path.Dir(pj)) == "functions" {
 			// don't count the functions dir, the functions are scoped 1 level above
 			pj = filepath.Dir(path.Dir(pj))
@@ -366,6 +397,7 @@ func sortFns(buff *kio.PackageBuffer) {
 		// sort by path names if depths are equal
 		return pi < pj
 	})
+	return outerErr
 }
 
 // init initializes the RunFns with a containerFilterProvider.
@@ -397,8 +429,24 @@ func (r *RunFns) init() {
 	}
 }
 
+type currentUserFunc func() (*user.User, error)
+
+// getUIDGID will return "nobody" if asCurrentUser is false. Otherwise
+// return "uid:gid" according to the return from currentUser function.
+func getUIDGID(asCurrentUser bool, currentUser currentUserFunc) (string, error) {
+	if !asCurrentUser {
+		return "nobody", nil
+	}
+
+	u, err := currentUser()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s:%s", u.Uid, u.Gid), nil
+}
+
 // ffp provides function filters
-func (r *RunFns) ffp(spec runtimeutil.FunctionSpec, api *yaml.RNode) (kio.Filter, error) {
+func (r *RunFns) ffp(spec runtimeutil.FunctionSpec, api *yaml.RNode, currentUser currentUserFunc) (kio.Filter, error) {
 	var resultsFile string
 	if r.ResultsDir != "" {
 		resultsFile = filepath.Join(r.ResultsDir, fmt.Sprintf(
@@ -407,13 +455,19 @@ func (r *RunFns) ffp(spec runtimeutil.FunctionSpec, api *yaml.RNode) (kio.Filter
 	}
 	if !r.DisableContainers && spec.Container.Image != "" {
 		// TODO: Add a test for this behavior
-		c := container.NewContainer(runtimeutil.ContainerSpec{
-			Image:         spec.Container.Image,
-			Network:       spec.Container.Network,
-			StorageMounts: r.StorageMounts,
-			User:          spec.Container.User,
-			Env:           spec.Container.Env,
-		})
+		uidgid, err := getUIDGID(r.AsCurrentUser, currentUser)
+		if err != nil {
+			return nil, err
+		}
+		c := container.NewContainer(
+			runtimeutil.ContainerSpec{
+				Image:         spec.Container.Image,
+				Network:       spec.Container.Network,
+				StorageMounts: r.StorageMounts,
+				Env:           spec.Container.Env,
+			},
+			uidgid,
+		)
 		cf := &c
 		cf.Exec.FunctionConfig = api
 		cf.Exec.GlobalScope = r.GlobalScope
