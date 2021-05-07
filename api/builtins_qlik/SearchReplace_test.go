@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/kustomize/api/provider"
 	"sigs.k8s.io/kustomize/api/resmap"
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
+	"sigs.k8s.io/kustomize/api/types"
 )
 
 func TestSearchReplacePlugin(t *testing.T) {
@@ -729,7 +730,7 @@ fooSpec:
 				}
 			}
 
-			h := resmap.NewPluginHelpers(ldr, valtest_test.MakeHappyMapValidator(t), resourceFactory)
+			h := resmap.NewPluginHelpers(ldr, valtest_test.MakeHappyMapValidator(t), resourceFactory, types.DisabledPluginConfig())
 			if err := plugin.Config(h, []byte(testCase.pluginConfig)); err != nil {
 				t.Fatalf("Err: %v", err)
 			}

@@ -13,6 +13,7 @@ import (
 
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/provider"
+	"sigs.k8s.io/kustomize/api/types"
 
 	"github.com/pkg/errors"
 	"sigs.k8s.io/kustomize/api/filesys"
@@ -467,7 +468,7 @@ spec:
 				t.Fatalf("Err: %v", err)
 			}
 
-			h := resmap.NewPluginHelpers(ldr, valtest_test.MakeHappyMapValidator(t), resourceFactory)
+			h := resmap.NewPluginHelpers(ldr, valtest_test.MakeHappyMapValidator(t), resourceFactory, types.DisabledPluginConfig())
 			if err := plugin.Config(h, []byte(testCase.pluginConfig)); err != nil {
 				t.Fatalf("Err: %v", err)
 			}

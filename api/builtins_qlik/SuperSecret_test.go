@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/kustomize/api/provider"
 	"sigs.k8s.io/kustomize/api/resmap"
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
+	"sigs.k8s.io/kustomize/api/types"
 )
 
 func TestSuperSecret_simpleTransformer(t *testing.T) {
@@ -254,7 +255,7 @@ data:
 
 			plugin := NewSuperSecretTransformerPlugin()
 
-			err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
+			err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig()), []byte(testCase.pluginConfig))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
 			}
@@ -489,7 +490,7 @@ prefix: some-service-
 
 							plugin := NewSuperSecretGeneratorPlugin()
 
-							err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory), []byte(`
+							err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig()), []byte(`
 apiVersion: qlik.com/v1
 kind: SuperSecret
 metadata:
@@ -507,7 +508,7 @@ prefix: some-service-
 
 							tempRes.SetName(fmt.Sprintf("some-service-%s", tempRes.GetName()))
 
-							hash, err := kunstruct.NewKunstructuredFactoryImpl().Hasher().Hash(tempRes)
+							hash, err := tempRes.Hash(p.GetResourceFactory().Hasher())
 							assert.NoError(t, err)
 							assert.Equal(t, fmt.Sprintf("%s-%s", tempRes.GetName(), hash), refName)
 
@@ -532,7 +533,7 @@ prefix: some-service-
 
 			plugin := NewSuperSecretTransformerPlugin()
 
-			err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
+			err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig()), []byte(testCase.pluginConfig))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
 			}
@@ -716,7 +717,7 @@ behavior: create
 			resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 
 			plugin := NewSuperSecretGeneratorPlugin()
-			err := plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
+			err := plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig()), []byte(testCase.pluginConfig))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
 			}
