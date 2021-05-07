@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"sigs.k8s.io/kustomize/api/filesys"
-	"sigs.k8s.io/kustomize/api/konfig"
 	"sigs.k8s.io/kustomize/api/krusty"
 	"sigs.k8s.io/kustomize/api/types"
 )
@@ -51,13 +50,13 @@ metadata:
 }
 
 func executeKustomizeBuild(directory string) ([]byte, error) {
-	kustomizer := krusty.MakeKustomizer(filesys.MakeFsOnDisk(), &krusty.Options{
+	kustomizer := krusty.MakeKustomizer(&krusty.Options{
 		DoLegacyResourceSort: false,
 		LoadRestrictions:     types.LoadRestrictionsNone,
 		DoPrune:              false,
-		PluginConfig:         konfig.DisabledPluginConfig(),
+		PluginConfig:         types.DisabledPluginConfig(),
 	})
-	resMap, err := kustomizer.Run(directory)
+	resMap, err := kustomizer.Run(filesys.MakeFsOnDisk(), directory)
 	if err != nil {
 		return nil, err
 	}

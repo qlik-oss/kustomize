@@ -110,6 +110,7 @@ func (b *SuperMapPluginBase) executeAssumeWillExistTransform(m resmap.ResMap) er
 	if len(b.Prefix) > 0 {
 		resourceName = fmt.Sprintf("%s%s", b.Prefix, resourceName)
 	}
+	tempResource.StorePreviousId()
 	tempResource.SetName(resourceName)
 
 	nameWithHash, err := b.generateNameWithHash(tempResource)
@@ -117,6 +118,7 @@ func (b *SuperMapPluginBase) executeAssumeWillExistTransform(m resmap.ResMap) er
 		b.Decorator.GetLogger().Printf("error hashing resource: %v, error: %v\n", resourceName, err)
 		return err
 	}
+	tempResource.StorePreviousId()
 	tempResource.SetName(nameWithHash)
 
 	err = b.executeNameReferencesTransformer(m)

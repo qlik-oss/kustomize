@@ -579,8 +579,8 @@ options:
 						assert.False(t, res.NeedHashSuffix())
 
 						data, err := res.GetFieldValue("data")
-						assert.Error(t, err)
-						assert.Nil(t, data)
+						assert.NoError(t, err)
+						assert.NotNil(t, data)
 
 						break
 					}
@@ -657,8 +657,8 @@ behavior: create
 						assert.True(t, res.NeedHashSuffix())
 
 						data, err := res.GetFieldValue("data")
-						assert.Error(t, err)
-						assert.Nil(t, data)
+						assert.NoError(t, err)
+						assert.NotNil(t, data)
 
 						break
 					}
