@@ -469,8 +469,8 @@ fooSpec:
 				if "FOO" != fooEnvVar["name"].(string) {
 					t.Fatalf("unexpected: %v\n", fooEnvVar["name"].(string))
 				}
-				if 1234 != fooEnvVar["value"].(int64) {
-					t.Fatalf("unexpected: %d\n", fooEnvVar["value"].(int64))
+				if 1234 != fooEnvVar["value"].(int) {
+					t.Fatalf("unexpected: %d\n", fooEnvVar["value"].(int))
 				}
 			},
 		},
@@ -572,8 +572,8 @@ fooSpec:
 				if "FOO" != fooEnvVar["name"].(string) {
 					t.Fatalf("unexpected: %v\n", fooEnvVar["name"].(string))
 				}
-				if 1234 != fooEnvVar["value"].(int64) {
-					t.Fatalf("unexpected: %d\n", fooEnvVar["value"].(int64))
+				if 1234 != fooEnvVar["value"].(int) {
+					t.Fatalf("unexpected: %d\n", fooEnvVar["value"].(int))
 				}
 			},
 		},

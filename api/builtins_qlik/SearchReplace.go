@@ -84,8 +84,8 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 	}
 	if p.Replace != "" {
 		switch newValue := p.Replace.(type) {
-		case int64:
-			p.replaceStr = strconv.FormatInt(newValue, 10)
+		case int:
+			p.replaceStr = strconv.FormatInt(int64(newValue), 10)
 		case bool:
 			p.replaceStr = strconv.FormatBool(newValue)
 		case float64:
@@ -166,8 +166,8 @@ func getReplacementValue(res *resource.Resource, fieldPath string) (string, inte
 		return "", nil, err
 	} else {
 		switch newValue := val.(type) {
-		case int64:
-			return strconv.FormatInt(newValue, 10), val, nil
+		case int:
+			return strconv.FormatInt(int64(newValue), 10), val, nil
 		case bool:
 			return strconv.FormatBool(newValue), val, nil
 		case float64:
@@ -233,7 +233,7 @@ func (p *SearchReplacePlugin) searchAndReplaceRNode(node *kyaml.RNode, base64Enc
 				targetType = p.ReplaceType
 			}
 			switch targetType {
-			case "int64":
+			case "int":
 				node.YNode().Value = strChanged
 				node.YNode().Tag = kyaml.NodeTagInt
 			case "bool":

@@ -77,7 +77,7 @@ data:
 
 					intValue, err := res.GetFieldValue("data.intValue")
 					assert.NoError(t, err)
-					assert.Equal(t, int64(1234), intValue)
+					assert.Equal(t, 1234, intValue)
 					break
 				}
 			}
