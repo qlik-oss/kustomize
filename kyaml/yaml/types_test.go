@@ -58,6 +58,27 @@ func TestCopyYNode(t *testing.T) {
 	}
 }
 
+func TestIsYNodeString(t *testing.T) {
+	if IsYNodeTaggedNull(nil) {
+		t.Fatalf("nil cannot be tagged null")
+	}
+	if IsYNodeTaggedNull(&Node{}) {
+		t.Fatalf("untagged node is not tagged")
+	}
+	if IsYNodeString(&Node{Tag: NodeTagString}) {
+		t.Fatalf("non-scalar node is not a string")
+	}
+	if IsYNodeString(&Node{Kind: ScalarNode, Tag: NodeTagFloat}) {
+		t.Fatalf("float tagged node is not tagged")
+	}
+	if !IsYNodeString(&Node{Kind: ScalarNode}) {
+		t.Fatalf("this looks like a string - no tag implies string")
+	}
+	if !IsYNodeString(&Node{Kind: ScalarNode, Tag: NodeTagString}) {
+		t.Fatalf("this looks like a string")
+	}
+}
+
 func TestIsYNodeTaggedNull(t *testing.T) {
 	if IsYNodeTaggedNull(nil) {
 		t.Fatalf("nil cannot be tagged null")
@@ -113,77 +134,14 @@ func TestIsYNodeEmptySeq(t *testing.T) {
 	}
 }
 
-func TestIsNameSpaceable1(t *testing.T) {
-	testCases := []struct {
-		tm              TypeMeta
-		isNamespaceable bool
-	}{
-		{
-			tm:              TypeMeta{Kind: "ClusterRole"},
-			isNamespaceable: false,
-		},
-		{
-			tm:              TypeMeta{Kind: "Namespace"},
-			isNamespaceable: false,
-		},
-		{
-			tm:              TypeMeta{Kind: "Deployment"},
-			isNamespaceable: true,
-		},
+func TestIsYNodeZero(t *testing.T) {
+	if IsYNodeZero(nil) {
+		t.Fatalf("nil node should not be zero")
 	}
-	for _, tc := range testCases {
-		if tc.tm.IsNamespaceable() {
-			if !tc.isNamespaceable {
-				t.Fatalf("%v is namespaceable, but shouldn't be", tc.tm)
-			}
-		} else {
-			if tc.isNamespaceable {
-				t.Fatalf("%v is not namespaceable, but should be", tc.tm)
-			}
-		}
+	if !IsYNodeZero(&Node{}) {
+		t.Fatalf("node is zero")
 	}
-}
-
-func TestIsNameSpaceable2(t *testing.T) {
-	testCases := []struct {
-		yammy           string
-		isNamespaceable bool
-	}{
-		{
-			yammy: `apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: bilbo
-  namespace: middleEarth
-`,
-			isNamespaceable: true,
-		},
-		{
-			yammy: `apiVersion: v1
-kind: Namespace
-metadata:
-  name: middleEarth
-`,
-			isNamespaceable: false,
-		},
-	}
-	for _, tc := range testCases {
-		rn, err := Parse(tc.yammy)
-		if err != nil {
-			t.Fatalf("unexpected parse error %v from json: %s", err, tc.yammy)
-		}
-		meta, err := rn.GetMeta()
-		if err != nil {
-			t.Fatalf("unexpected meta error %v", err)
-		}
-		if meta.IsNamespaceable() {
-			if !tc.isNamespaceable {
-				t.Fatalf("%v is namespaceable, but shouldn't be", meta)
-			}
-		} else {
-			if tc.isNamespaceable {
-				t.Fatalf("%v is not namespaceable, but should be", meta)
-			}
-		}
+	if IsYNodeZero(&Node{Kind: MappingNode}) {
+		t.Fatalf("node is not zero")
 	}
 }

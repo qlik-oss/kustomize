@@ -65,16 +65,17 @@ func TestDeleterCreator_Delete(t *testing.T) {
 		t.FailNow()
 	}
 
+	sc, err := openapi.SchemaFromFile(openAPI.Name())
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
 	// add a delete creator
 	dc := DeleterCreator{
 		Name:             "image",
 		DefinitionPrefix: fieldmeta.SetterDefinitionPrefix,
+		SettersSchema:    sc,
 	}
 
-	err = openapi.AddSchemaFromFile(openAPI.Name())
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
 	dc.OpenAPIPath = openAPI.Name()
 	dc.ResourcesPath = resource.Name()
 

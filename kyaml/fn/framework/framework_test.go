@@ -4,49 +4,85 @@
 package framework_test
 
 import (
-	"io/ioutil"
-	"os"
-	"path/filepath"
+	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"sigs.k8s.io/kustomize/kyaml/fn/framework"
+	"sigs.k8s.io/kustomize/kyaml/kio"
+	"sigs.k8s.io/kustomize/kyaml/yaml"
 )
 
-func TestCommand_dockerfile(t *testing.T) {
-	d, err := ioutil.TempDir("", "kustomize")
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
-	defer os.RemoveAll(d)
-
-	// create a function
-
-	resourceList := &framework.ResourceList{}
-	cmd := framework.Command(resourceList, func() error { return nil })
-
-	// generate the Dockerfile
-	cmd.SetArgs([]string{"gen", d})
-	if !assert.NoError(t, cmd.Execute()) {
-		t.FailNow()
-	}
-
-	b, err := ioutil.ReadFile(filepath.Join(d, "Dockerfile"))
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
-
-	expected := `FROM golang:1.13-stretch
-ENV CGO_ENABLED=0
-WORKDIR /go/src/
-COPY . .
-RUN go build -v -o /usr/local/bin/function ./
-
-FROM alpine:latest
-COPY --from=0 /usr/local/bin/function /usr/local/bin/function
-CMD ["function"]
-`
-	if !assert.Equal(t, expected, string(b)) {
-		t.FailNow()
-	}
+func TestExecute_Result(t *testing.T) {
+	p := framework.ResourceListProcessorFunc(func(rl *framework.ResourceList) error {
+		err := &framework.Result{
+			Name: "Incompatible config",
+			Items: []framework.ResultItem{{
+				Message:  "bad value for replicas",
+				Severity: framework.Error,
+				ResourceRef: yaml.ResourceMeta{
+					TypeMeta: yaml.TypeMeta{APIVersion: "v1", Kind: "Deployment"},
+					ObjectMeta: yaml.ObjectMeta{
+						NameMeta: yaml.NameMeta{Name: "tester", Namespace: "default"},
+					},
+				},
+				Field: framework.Field{
+					Path:           ".spec.Replicas",
+					CurrentValue:   "0",
+					SuggestedValue: "3",
+				},
+				File: framework.File{
+					Path:  "/path/to/deployment.yaml",
+					Index: 0,
+				},
+			}},
+		}
+		rl.Result = err
+		return err
+	})
+	out := new(bytes.Buffer)
+	source := &kio.ByteReadWriter{Reader: bytes.NewBufferString(`
+kind: ResourceList
+apiVersion: config.kubernetes.io/v1alpha1
+items:
+- kind: Deployment
+  apiVersion: v1
+  metadata:
+    name: tester
+    namespace: default
+  spec:
+    replicas: 0
+`), Writer: out}
+	err := framework.Execute(p, source)
+	assert.EqualError(t, err, "[error] v1/Deployment/default/tester .spec."+
+		"Replicas: bad value for replicas")
+	assert.Equal(t, 1, err.(*framework.Result).ExitCode())
+	assert.Equal(t, `apiVersion: config.kubernetes.io/v1alpha1
+kind: ResourceList
+items:
+- kind: Deployment
+  apiVersion: v1
+  metadata:
+    name: tester
+    namespace: default
+  spec:
+    replicas: 0
+results:
+  name: Incompatible config
+  items:
+  - message: bad value for replicas
+    severity: error
+    resourceRef:
+      apiVersion: v1
+      kind: Deployment
+      metadata:
+        name: tester
+        namespace: default
+    field:
+      path: .spec.Replicas
+      currentValue: "0"
+      suggestedValue: "3"
+    file:
+      path: /path/to/deployment.yaml`, strings.TrimSpace(out.String()))
 }

@@ -6,6 +6,7 @@ package target
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -18,6 +19,7 @@ import (
 	"sigs.k8s.io/kustomize/api/konfig"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/types"
+	"sigs.k8s.io/kustomize/kyaml/openapi"
 	"sigs.k8s.io/yaml"
 )
 
@@ -234,7 +236,18 @@ func (kt *KustTarget) runGenerators(
 
 func (kt *KustTarget) configureExternalGenerators() ([]resmap.Generator, error) {
 	ra := accumulator.MakeEmptyAccumulator()
-	ra, err := kt.accumulateResources(ra, kt.kustomization.Generators)
+	var generatorPaths []string
+	for _, p := range kt.kustomization.Generators {
+		// handle inline generators
+		rm, err := kt.rFactory.NewResMapFromBytes([]byte(p))
+		if err != nil {
+			// not an inline config
+			generatorPaths = append(generatorPaths, p)
+			continue
+		}
+		ra.AppendAll(rm)
+	}
+	ra, err := kt.accumulateResources(ra, generatorPaths)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +272,18 @@ func (kt *KustTarget) runTransformers(ra *accumulator.ResAccumulator) error {
 
 func (kt *KustTarget) configureExternalTransformers(transformers []string) ([]resmap.Transformer, error) {
 	ra := accumulator.MakeEmptyAccumulator()
-	ra, err := kt.accumulateResources(ra, transformers)
+	var transformerPaths []string
+	for _, p := range transformers {
+		// handle inline transformers
+		rm, err := kt.rFactory.NewResMapFromBytes([]byte(p))
+		if err != nil {
+			// not an inline config
+			transformerPaths = append(transformerPaths, p)
+			continue
+		}
+		ra.AppendAll(rm)
+	}
+	ra, err := kt.accumulateResources(ra, transformerPaths)
 
 	if err != nil {
 		return nil, err
@@ -311,14 +335,15 @@ func (kt *KustTarget) accumulateResources(
 	for _, path := range paths {
 		// try loading resource as file then as base (directory or git repository)
 		if errF := kt.accumulateFile(ra, path); errF != nil {
-			ldr, errL := kt.ldr.New(path)
-			if errL != nil {
-				return nil, fmt.Errorf("accumulateFile %q, loader.New %q", errF, errL)
+			ldr, err := kt.ldr.New(path)
+			if err != nil {
+				return nil, errors.Wrapf(
+					err, "accumulation err='%s'", errF.Error())
 			}
-			var errD error
-			ra, errD = kt.accumulateDirectory(ra, ldr, false)
-			if errD != nil {
-				return nil, fmt.Errorf("accumulateFile %q, accumulateDirector: %q", errF, errD)
+			ra, err = kt.accumulateDirectory(ra, ldr, false)
+			if err != nil {
+				return nil, errors.Wrapf(
+					err, "accumulation err='%s'", errF.Error())
 			}
 		}
 	}
@@ -352,6 +377,18 @@ func (kt *KustTarget) accumulateDirectory(
 	if err != nil {
 		return nil, errors.Wrapf(
 			err, "couldn't make target for path '%s'", ldr.Root())
+	}
+	var bytes []byte
+	path := ldr.Root()
+	if openApiPath, exists := subKt.Kustomization().OpenAPI["path"]; exists {
+		bytes, err = ldr.Load(filepath.Join(path, openApiPath))
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = openapi.SetSchema(subKt.Kustomization().OpenAPI, bytes, false)
+	if err != nil {
+		return nil, err
 	}
 	if isComponent && subKt.kustomization.Kind != types.ComponentKind {
 		return nil, fmt.Errorf(
@@ -406,7 +443,10 @@ func (kt *KustTarget) configureBuiltinPlugin(
 				err, "builtin %s marshal", bpt)
 		}
 	}
-	err = p.Config(resmap.NewPluginHelpers(kt.ldr, kt.validator, kt.rFactory), y)
+	err = p.Config(
+		resmap.NewPluginHelpers(
+			kt.ldr, kt.validator, kt.rFactory, kt.pLdr.Config()),
+		y)
 	if err != nil {
 		return errors.Wrapf(
 			err, "trouble configuring builtin %s with config: `\n%s`", bpt, string(y))

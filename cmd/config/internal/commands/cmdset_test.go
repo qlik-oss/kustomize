@@ -604,6 +604,54 @@ spec:
 		},
 
 		{
+			name: "value must be provided from either flag or arg",
+			args: []string{"replicas", "--description", "hi there"},
+			inputOpenAPI: `
+apiVersion: v1alpha1
+kind: Example
+openAPI:
+  definitions:
+    io.k8s.cli.setters.replicas:
+      description: hello world
+      x-k8s-cli:
+        setter:
+          name: replicas
+          value: "3"
+          setBy: me
+ `,
+			input: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 3 # {"$ref":"#/definitions/io.k8s.cli.setters.replicas"}
+ `,
+			expectedOpenAPI: `
+apiVersion: v1alpha1
+kind: Example
+openAPI:
+  definitions:
+    io.k8s.cli.setters.replicas:
+      description: hello world
+      x-k8s-cli:
+        setter:
+          name: replicas
+          value: "3"
+          setBy: me
+ `,
+			expectedResources: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 3 # {"$ref":"#/definitions/io.k8s.cli.setters.replicas"}
+ `,
+			errMsg: `value must be provided either from flag or arg`,
+		},
+
+		{
 			name: "openAPI list values set by flag success",
 			args: []string{"list", "--values", "10", "--values", "11"},
 			out:  "set 1 field(s)\n",
@@ -942,70 +990,6 @@ spec:
 `,
 			errMsg: "cyclic substitution detected with name my-nested-subst",
 		},
-
-		{
-			name: "set v1 setter asm",
-			args: []string{"profilesetter", "my-asm"},
-			out:  "set 1 fields\n",
-			inputOpenAPI: `
- `,
-			input: `
-apiVersion: install.istio.io/v1alpha2
-kind: IstioControlPlane
-metadata:
-  clusterName: "project-id/us-east1-d/cluster-name"
-spec:
-  profile: asm # {"type":"string","x-kustomize":{"setter":{"name":"profilesetter","value":"asm"}}}
-  hub:
-  - --gcr.io/asm-testing
-  - --gcr.io/asm-testing2
- `,
-			expectedOpenAPI: `
- `,
-			expectedResources: `
-apiVersion: install.istio.io/v1alpha2
-kind: IstioControlPlane
-metadata:
-  clusterName: "project-id/us-east1-d/cluster-name"
-spec:
-  profile: my-asm # {"type":"string","x-kustomize":{"setter":{"name":"profilesetter","value":"my-asm"}}}
-  hub:
-  - --gcr.io/asm-testing
-  - --gcr.io/asm-testing2
- `,
-		},
-
-		{
-			name: "set v1 partial setter",
-			args: []string{"gcloud.core.project", "my-project"},
-			out:  "set 1 fields\n",
-			inputOpenAPI: `
- `,
-			input: `
-apiVersion: install.istio.io/v1alpha2
-kind: IstioControlPlane
-metadata:
-  clusterName: "project-id/us-east1-d/cluster-name" # {"type":"string","x-kustomize":{"partialSetters":[{"name":"gcloud.core.project","value":"project-id"},{"name":"cluster-name","value":"cluster-name"},{"name":"gcloud.compute.zone","value":"us-east1-d"}]}}
-spec:
-  profile: asm # {"type":"string","x-kustomize":{"setter":{"name":"profilesetter","value":"asm"}}}
-  hub:
-  - --gcr.io/asm-testing
-  - --gcr.io/asm-testing2
- `,
-			expectedOpenAPI: `
- `,
-			expectedResources: `
-apiVersion: install.istio.io/v1alpha2
-kind: IstioControlPlane
-metadata:
-  clusterName: "my-project/us-east1-d/cluster-name" # {"type":"string","x-kustomize":{"partialSetters":[{"name":"gcloud.core.project","value":"my-project"},{"name":"cluster-name","value":"cluster-name"},{"name":"gcloud.compute.zone","value":"us-east1-d"}]}}
-spec:
-  profile: asm # {"type":"string","x-kustomize":{"setter":{"name":"profilesetter","value":"asm"}}}
-  hub:
-  - --gcr.io/asm-testing
-  - --gcr.io/asm-testing2
- `,
-		},
 	}
 	for i := range tests {
 		test := tests[i]
@@ -1094,13 +1078,13 @@ func TestSetSubPackages(t *testing.T) {
 			dataset: "dataset-with-setters",
 			args:    []string{"namespace", "otherspace", "-R"},
 			expected: `${baseDir}/mysql/
-set 1 field(s)
+set 1 field(s) of setter "namespace" to value "otherspace"
 
 ${baseDir}/mysql/nosetters/
 setter "namespace" is not found
 
 ${baseDir}/mysql/storage/
-set 1 field(s)
+set 1 field(s) of setter "namespace" to value "otherspace"
 `,
 		},
 		{
@@ -1109,7 +1093,7 @@ set 1 field(s)
 			packagePath: "mysql",
 			args:        []string{"namespace", "otherspace"},
 			expected: `${baseDir}/mysql/
-set 1 field(s)
+set 1 field(s) of setter "namespace" to value "otherspace"
 `,
 		},
 		{
@@ -1118,7 +1102,7 @@ set 1 field(s)
 			packagePath: "mysql/storage",
 			args:        []string{"namespace", "otherspace"},
 			expected: `${baseDir}/mysql/storage/
-set 1 field(s)
+set 1 field(s) of setter "namespace" to value "otherspace"
 `,
 		},
 	}

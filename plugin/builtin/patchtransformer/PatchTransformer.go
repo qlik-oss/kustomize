@@ -10,11 +10,9 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch"
 	"sigs.k8s.io/kustomize/api/filters/patchjson6902"
-	"sigs.k8s.io/kustomize/api/filters/patchstrategicmerge"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/resource"
 	"sigs.k8s.io/kustomize/api/types"
-	"sigs.k8s.io/kustomize/kyaml/filtersutil"
 	"sigs.k8s.io/yaml"
 )
 
@@ -24,6 +22,7 @@ type plugin struct {
 	Path         string          `json:"path,omitempty" yaml:"path,omitempty"`
 	Patch        string          `json:"patch,omitempty" yaml:"patch,omitempty"`
 	Target       *types.Selector `json:"target,omitempty" yaml:"target,omitempty"`
+	Options      map[string]bool `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
 //noinspection GoUnusedGlobalVariable
@@ -44,7 +43,6 @@ func (p *plugin) Config(
 		return fmt.Errorf(
 			"patch and path can't be set at the same time\n%s", string(c))
 	}
-
 	if p.Path != "" {
 		loaded, loadErr := h.Loader().Load(p.Path)
 		if loadErr != nil {
@@ -67,6 +65,12 @@ func (p *plugin) Config(
 	}
 	if errSM == nil {
 		p.loadedPatch = patchSM
+		if p.Options["allowNameChange"] {
+			p.loadedPatch.SetAllowNameChange("true")
+		}
+		if p.Options["allowKindChange"] {
+			p.loadedPatch.SetAllowKindChange("true")
+		}
 	} else {
 		p.decodedPatch = patchJson
 	}
@@ -76,10 +80,9 @@ func (p *plugin) Config(
 func (p *plugin) Transform(m resmap.ResMap) error {
 	if p.loadedPatch == nil {
 		return p.transformJson6902(m, p.decodedPatch)
-	} else {
-		// The patch was a strategic merge patch
-		return p.transformStrategicMerge(m, p.loadedPatch)
 	}
+	// The patch was a strategic merge patch
+	return p.transformStrategicMerge(m, p.loadedPatch)
 }
 
 // transformStrategicMerge applies the provided strategic merge patch
@@ -91,36 +94,13 @@ func (p *plugin) transformStrategicMerge(m resmap.ResMap, patch *resource.Resour
 		if err != nil {
 			return err
 		}
-		return p.applySMPatch(target, patch)
+		return target.ApplySmPatch(patch)
 	}
-
-	resources, err := m.Select(*p.Target)
+	selected, err := m.Select(*p.Target)
 	if err != nil {
 		return err
 	}
-	for _, res := range resources {
-		patchCopy := patch.DeepCopy()
-		patchCopy.SetName(res.GetName())
-		patchCopy.SetNamespace(res.GetNamespace())
-		patchCopy.SetGvk(res.GetGvk())
-		err := p.applySMPatch(res, patchCopy)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// applySMPatch applies the provided strategic merge patch to the
-// given resource.
-func (p *plugin) applySMPatch(resource, patch *resource.Resource) error {
-	node, err := filtersutil.GetRNode(patch)
-	if err != nil {
-		return err
-	}
-	return filtersutil.ApplyToJSON(patchstrategicmerge.Filter{
-		Patch: node,
-	}, resource)
+	return m.ApplySmPatch(resource.MakeIdSet(selected), patch)
 }
 
 // transformJson6902 applies the provided json6902 patch
@@ -134,9 +114,10 @@ func (p *plugin) transformJson6902(m resmap.ResMap, patch jsonpatch.Patch) error
 		return err
 	}
 	for _, res := range resources {
-		err = filtersutil.ApplyToJSON(patchjson6902.Filter{
+		res.StorePreviousId()
+		err = res.ApplyFilter(patchjson6902.Filter{
 			Patch: p.Patch,
-		}, res)
+		})
 		if err != nil {
 			return err
 		}
