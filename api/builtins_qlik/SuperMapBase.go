@@ -34,7 +34,7 @@ type SuperMapPluginBase struct {
 	AssumeTargetWillExist bool   `json:"assumeTargetWillExist,omitempty" yaml:"assumeTargetWillExist,omitempty"`
 	Prefix                string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
 	Rf                    *resmap.Factory
-	Hasher                ifc.KunstructuredHasher
+	Hasher                ifc.KustHasher
 	Decorator             IDecorator
 	Configurations        []string `json:"configurations,omitempty" yaml:"configurations,omitempty"`
 	tConfig               *builtinconfig.TransformerConfig
@@ -110,6 +110,7 @@ func (b *SuperMapPluginBase) executeAssumeWillExistTransform(m resmap.ResMap) er
 	if len(b.Prefix) > 0 {
 		resourceName = fmt.Sprintf("%s%s", b.Prefix, resourceName)
 	}
+	tempResource.StorePreviousId()
 	tempResource.SetName(resourceName)
 
 	nameWithHash, err := b.generateNameWithHash(tempResource)
@@ -117,6 +118,7 @@ func (b *SuperMapPluginBase) executeAssumeWillExistTransform(m resmap.ResMap) er
 		b.Decorator.GetLogger().Printf("error hashing resource: %v, error: %v\n", resourceName, err)
 		return err
 	}
+	tempResource.StorePreviousId()
 	tempResource.SetName(nameWithHash)
 
 	err = b.executeNameReferencesTransformer(m)
@@ -145,12 +147,17 @@ func (b *SuperMapPluginBase) executeBasicTransform(resource *resource.Resource, 
 			b.Decorator.GetLogger().Printf("error removing original resource on name change: %v\n", err)
 			return err
 		}
-		newResource := b.Rf.RF().FromMapAndOption(resource.Map(), &types.GeneratorArgs{Behavior: "replace"})
-		if err := m.Append(newResource); err != nil {
-			b.Decorator.GetLogger().Printf("error re-adding resource on name change: %v\n", err)
+		if rmap, err := resource.Map(); err != nil {
+			b.Decorator.GetLogger().Printf("error getting resource.Map(): %v\n", err)
 			return err
+		} else {
+			newResource := b.Rf.RF().FromMapAndOption(rmap, &types.GeneratorArgs{Behavior: "replace"})
+			if err := m.Append(newResource); err != nil {
+				b.Decorator.GetLogger().Printf("error re-adding resource on name change: %v\n", err)
+				return err
+			}
+			b.Decorator.GetLogger().Printf("resource should have hashing enabled: %v\n", newResource)
 		}
-		b.Decorator.GetLogger().Printf("resource should have hashing enabled: %v\n", newResource)
 	}
 	return nil
 }
@@ -177,7 +184,7 @@ func (b *SuperMapPluginBase) find(name string, resourceType string, m resmap.Res
 }
 
 func (b *SuperMapPluginBase) generateNameWithHash(res *resource.Resource) (string, error) {
-	hash, err := b.Hasher.Hash(res)
+	hash, err := res.Hash(b.Hasher)
 	if err != nil {
 		return "", err
 	}

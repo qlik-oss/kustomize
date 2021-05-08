@@ -4,7 +4,7 @@
 package setters2
 
 import (
-	"k8s.io/kube-openapi/pkg/validation/spec"
+	"k8s.io/kube-openapi/compat/pkg/validation/spec"
 	"sigs.k8s.io/kustomize/kyaml/fieldmeta"
 	"sigs.k8s.io/kustomize/kyaml/openapi"
 	"sigs.k8s.io/kustomize/kyaml/yaml"

@@ -6,7 +6,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/go-errors/errors v1.0.1
 	github.com/google/go-cmp v0.4.0
-	github.com/mailru/easyjson v0.7.0 // indirect
 	github.com/markbates/pkger v0.17.1
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00
 	github.com/pkg/errors v0.9.1
@@ -14,12 +13,12 @@ require (
 	github.com/spf13/cobra v1.0.0
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
-	github.com/stretchr/testify v1.5.1
+	github.com/stretchr/testify v1.6.1
 	github.com/xlab/treeprint v0.0.0-20181112141820-a009c3971eca
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
-	k8s.io/kube-openapi v0.0.0-20210421082810-95288971da7e
+	k8s.io/kube-openapi/compat v0.0.0-00010101000000-000000000000
 )
 
 // These can be removed after upgrading golangci-lint (Issue #3663)
@@ -34,3 +33,5 @@ require (
 // replace mvdan.cc/unparam v0.0.0-20190124213536-fbb59629db34 => mvdan.cc/unparam v0.0.0-20190209190245-fbb59629db34
 
 replace gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
+
+replace k8s.io/kube-openapi/compat => ../compat/k8s.io/kube-openapi

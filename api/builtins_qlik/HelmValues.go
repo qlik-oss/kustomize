@@ -6,8 +6,8 @@ import (
 
 	"github.com/imdario/mergo"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
-	"sigs.k8s.io/kustomize/api/ifc"
 	"sigs.k8s.io/kustomize/api/resmap"
+	"sigs.k8s.io/kustomize/api/resource"
 	"sigs.k8s.io/kustomize/api/types"
 	"sigs.k8s.io/kustomize/kyaml/filtersutil"
 	"sigs.k8s.io/kustomize/kyaml/kio"
@@ -111,7 +111,7 @@ func (p *HelmValuesPlugin) Transform(m resmap.ResMap) error {
 	return nil
 }
 
-func isHelmChart(obj ifc.Kunstructured) bool {
+func isHelmChart(obj *resource.Resource) bool {
 	kind := obj.GetKind()
 	if kind == "HelmChart" {
 		return true
@@ -119,7 +119,7 @@ func isHelmChart(obj ifc.Kunstructured) bool {
 	return false
 }
 
-func applyResources(obj ifc.Kunstructured, chart string) bool {
+func applyResources(obj *resource.Resource, chart string) bool {
 	name, _ := obj.GetString("chartName")
 	if name == chart || chart == "" || chart == "null" {
 		return true

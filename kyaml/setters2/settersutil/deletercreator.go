@@ -4,7 +4,7 @@
 package settersutil
 
 import (
-	"k8s.io/kube-openapi/pkg/validation/spec"
+	"k8s.io/kube-openapi/compat/pkg/validation/spec"
 	"sigs.k8s.io/kustomize/kyaml/kio"
 	"sigs.k8s.io/kustomize/kyaml/setters2"
 )

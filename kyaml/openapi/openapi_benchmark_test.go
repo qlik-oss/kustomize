@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"k8s.io/kube-openapi/pkg/validation/spec"
+	"k8s.io/kube-openapi/compat/pkg/validation/spec"
 	"sigs.k8s.io/kustomize/kyaml/openapi/kubernetesapi"
 )
 

@@ -23,12 +23,12 @@ import (
 	"helm.sh/helm/v3/pkg/repo"
 	"helm.sh/helm/v3/pkg/repo/repotest"
 	"sigs.k8s.io/kustomize/api/filesys"
-	"sigs.k8s.io/kustomize/api/k8sdeps/kunstruct"
 	"sigs.k8s.io/kustomize/api/loader"
-	"sigs.k8s.io/kustomize/api/resid"
+	"sigs.k8s.io/kustomize/api/provider"
 	"sigs.k8s.io/kustomize/api/resmap"
-	"sigs.k8s.io/kustomize/api/resource"
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
+	"sigs.k8s.io/kustomize/api/types"
+	"sigs.k8s.io/kustomize/kyaml/resid"
 	"sigs.k8s.io/yaml"
 )
 
@@ -231,11 +231,10 @@ spec:
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			resourceFactory := resmap.NewFactory(resource.NewFactory(
-				kunstruct.NewKunstructuredFactoryImpl()), nil)
-
+			p := provider.NewDefaultDepProvider()
+			resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 			plugin := NewHelmChartPlugin()
-			err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
+			err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig()), []byte(testCase.pluginConfig))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
 			}
@@ -365,8 +364,9 @@ spec:
 `
 
 	logger := log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds|log.Lshortfile)
-	resourceFactory := resmap.NewFactory(resource.NewFactory(kunstruct.NewKunstructuredFactoryImpl()), nil)
-	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory)
+	p := provider.NewDefaultDepProvider()
+	resourceFactory := resmap.NewFactory(p.GetResourceFactory())
+	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig())
 
 	var wg sync.WaitGroup
 	numTests := 50
@@ -519,8 +519,9 @@ spec:
 	}
 
 	logger := log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds|log.Lshortfile)
-	resourceFactory := resmap.NewFactory(resource.NewFactory(kunstruct.NewKunstructuredFactoryImpl()), nil)
-	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory)
+	p := provider.NewDefaultDepProvider()
+	resourceFactory := resmap.NewFactory(p.GetResourceFactory())
+	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig())
 
 	log.Println("starting tests...")
 
@@ -656,8 +657,9 @@ spec:
 	}
 
 	logger := log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds|log.Lshortfile)
-	resourceFactory := resmap.NewFactory(resource.NewFactory(kunstruct.NewKunstructuredFactoryImpl()), nil)
-	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory)
+	p := provider.NewDefaultDepProvider()
+	resourceFactory := resmap.NewFactory(p.GetResourceFactory())
+	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig())
 
 	log.Println("starting tests...")
 
@@ -844,6 +846,7 @@ generated: "0001-01-01T00:00:00Z"
 repositories:
 - caFile: ""
   certFile: ""
+  insecure_skip_tls_verify: false
   keyFile: ""
   name: qlik
   password: ""
@@ -870,6 +873,7 @@ generated: "0001-01-01T00:00:00Z"
 repositories:
 - caFile: ""
   certFile: ""
+  insecure_skip_tls_verify: false
   keyFile: ""
   name: qlik
   password: ""
@@ -896,6 +900,7 @@ generated: "0001-01-01T00:00:00Z"
 repositories:
 - caFile: ""
   certFile: ""
+  insecure_skip_tls_verify: false
   keyFile: ""
   name: qlik
   password: ""
@@ -922,6 +927,7 @@ generated: "0001-01-01T00:00:00Z"
 repositories:
 - caFile: ""
   certFile: ""
+  insecure_skip_tls_verify: false
   keyFile: ""
   name: qlik
   password: ""
@@ -943,6 +949,7 @@ generated: "0001-01-01T00:00:00Z"
 repositories:
 - caFile: ""
   certFile: ""
+  insecure_skip_tls_verify: false
   keyFile: ""
   name: qlik
   password: ""
@@ -959,6 +966,7 @@ generated: "0001-01-01T00:00:00Z"
 repositories:
 - caFile: ""
   certFile: ""
+  insecure_skip_tls_verify: false
   keyFile: ""
   name: qlik
   password: ""
@@ -980,6 +988,7 @@ generated: "0001-01-01T00:00:00Z"
 repositories:
 - caFile: ""
   certFile: ""
+  insecure_skip_tls_verify: false
   keyFile: ""
   name: qlik
   password: foobar
@@ -1014,8 +1023,9 @@ repositories:
 
 func Test_IncludeCRDs_defaults(t *testing.T) {
 	logger := log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds|log.Lshortfile)
-	resourceFactory := resmap.NewFactory(resource.NewFactory(kunstruct.NewKunstructuredFactoryImpl()), nil)
-	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory)
+	p := provider.NewDefaultDepProvider()
+	resourceFactory := resmap.NewFactory(p.GetResourceFactory())
+	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig())
 
 	plugin := &HelmChartPlugin{logger: logger}
 	if err := plugin.Config(pluginHelpers, []byte(`apiVersion: apps/v1

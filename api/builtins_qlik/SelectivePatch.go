@@ -49,7 +49,7 @@ func (p *SelectivePatchPlugin) Config(h *resmap.PluginHelpers, c []byte) (err er
 		//fmt.Println(v.Path)
 		b, _ := p.makeIndividualPatches(v)
 		prefixer := builtins.NewPatchTransformerPlugin()
-		err = prefixer.Config(resmap.NewPluginHelpers(newLdr, h.Validator(), h.ResmapFactory()), b)
+		err = prefixer.Config(resmap.NewPluginHelpers(newLdr, h.Validator(), h.ResmapFactory(), types.DisabledPluginConfig()), b)
 		if err != nil {
 			p.logger.Printf("error executing PatchTransformerPlugin.Config(), error: %v\n", err)
 			return errors.Wrapf(err, "stringprefixer configure")
@@ -61,7 +61,7 @@ func (p *SelectivePatchPlugin) Config(h *resmap.PluginHelpers, c []byte) (err er
 		//fmt.Println(v.Path)
 		b, _ := p.makeIndividualPatches(v)
 		prefixer := builtins.NewPatchTransformerPlugin()
-		err = prefixer.Config(resmap.NewPluginHelpers(newLdr, h.Validator(), h.ResmapFactory()), b)
+		err = prefixer.Config(resmap.NewPluginHelpers(newLdr, h.Validator(), h.ResmapFactory(), types.DisabledPluginConfig()), b)
 		if err != nil {
 			p.logger.Printf("error executing PatchTransformerPlugin.Config(), error: %v\n", err)
 			return errors.Wrapf(err, "stringprefixer configure")

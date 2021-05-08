@@ -9,9 +9,9 @@ import (
 	"text/template"
 
 	goyaml "gopkg.in/yaml.v3"
-	"k8s.io/kube-openapi/pkg/validation/spec"
-	"k8s.io/kube-openapi/pkg/validation/strfmt"
-	"k8s.io/kube-openapi/pkg/validation/validate"
+	"k8s.io/kube-openapi/compat/pkg/validation/spec"
+	"k8s.io/kube-openapi/compat/pkg/validation/strfmt"
+	"k8s.io/kube-openapi/compat/pkg/validation/validate"
 	"sigs.k8s.io/kustomize/kyaml/errors"
 	"sigs.k8s.io/kustomize/kyaml/fieldmeta"
 	"sigs.k8s.io/kustomize/kyaml/kio"

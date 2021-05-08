@@ -7,11 +7,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"sigs.k8s.io/kustomize/api/filesys"
-	"sigs.k8s.io/kustomize/api/k8sdeps/kunstruct"
 	"sigs.k8s.io/kustomize/api/loader"
+	"sigs.k8s.io/kustomize/api/provider"
 	"sigs.k8s.io/kustomize/api/resmap"
-	"sigs.k8s.io/kustomize/api/resource"
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
+	"sigs.k8s.io/kustomize/api/types"
 )
 
 func TestFullPath(t *testing.T) {
@@ -154,8 +154,8 @@ fieldSpecs:
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			resourceFactory := resmap.NewFactory(resource.NewFactory(
-				kunstruct.NewKunstructuredFactoryImpl()), nil)
+			p := provider.NewDefaultDepProvider()
+			resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 
 			resMap, err := resourceFactory.NewResMapFromBytes([]byte(testCase.pluginInputResources))
 			if err != nil {
@@ -176,7 +176,7 @@ fieldSpecs:
 
 			plugin := NewFullPathPlugin()
 
-			err = plugin.Config(resmap.NewPluginHelpers(ldr, valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
+			err = plugin.Config(resmap.NewPluginHelpers(ldr, valtest_test.MakeFakeValidator(), resourceFactory,types.DisabledPluginConfig()), []byte(testCase.pluginConfig))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
 			}
