@@ -10,11 +10,11 @@ import (
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/filesys"
 	"sigs.k8s.io/kustomize/api/ifc"
-	"sigs.k8s.io/kustomize/api/k8sdeps/kunstruct"
 	"sigs.k8s.io/kustomize/api/loader"
+	"sigs.k8s.io/kustomize/api/provider"
 	"sigs.k8s.io/kustomize/api/resmap"
-	"sigs.k8s.io/kustomize/api/resource"
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
+	"sigs.k8s.io/kustomize/api/types"
 )
 
 func TestSearchReplacePlugin(t *testing.T) {
@@ -469,8 +469,8 @@ fooSpec:
 				if "FOO" != fooEnvVar["name"].(string) {
 					t.Fatalf("unexpected: %v\n", fooEnvVar["name"].(string))
 				}
-				if 1234 != fooEnvVar["value"].(int64) {
-					t.Fatalf("unexpected: %d\n", fooEnvVar["value"].(int64))
+				if 1234 != fooEnvVar["value"].(int) {
+					t.Fatalf("unexpected: %d\n", fooEnvVar["value"].(int))
 				}
 			},
 		},
@@ -572,8 +572,8 @@ fooSpec:
 				if "FOO" != fooEnvVar["name"].(string) {
 					t.Fatalf("unexpected: %v\n", fooEnvVar["name"].(string))
 				}
-				if 1234 != fooEnvVar["value"].(int64) {
-					t.Fatalf("unexpected: %d\n", fooEnvVar["value"].(int64))
+				if 1234 != fooEnvVar["value"].(int) {
+					t.Fatalf("unexpected: %d\n", fooEnvVar["value"].(int))
 				}
 			},
 		},
@@ -713,8 +713,8 @@ fooSpec:
 	plugin := SearchReplacePlugin{logger: utils.GetLogger("SearchReplacePlugin")}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			resourceFactory := resmap.NewFactory(resource.NewFactory(kunstruct.NewKunstructuredFactoryImpl()), nil)
-
+			p := provider.NewDefaultDepProvider()
+			resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 			resMap, err := resourceFactory.NewResMapFromBytes([]byte(testCase.pluginInputResources))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
@@ -730,7 +730,7 @@ fooSpec:
 				}
 			}
 
-			h := resmap.NewPluginHelpers(ldr, valtest_test.MakeHappyMapValidator(t), resourceFactory)
+			h := resmap.NewPluginHelpers(ldr, valtest_test.MakeHappyMapValidator(t), resourceFactory, types.DisabledPluginConfig())
 			if err := plugin.Config(h, []byte(testCase.pluginConfig)); err != nil {
 				t.Fatalf("Err: %v", err)
 			}

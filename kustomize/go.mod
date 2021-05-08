@@ -1,30 +1,34 @@
-module sigs.k8s.io/kustomize/kustomize/v3
+module sigs.k8s.io/kustomize/kustomize/v4
 
-go 1.14
+go 1.16
 
 require (
-	github.com/google/go-cmp v0.4.0
+	github.com/google/go-cmp v0.5.5
 	github.com/pkg/errors v0.9.1
-	github.com/spf13/cobra v1.0.0
+	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
-	k8s.io/client-go v11.0.0+incompatible
-	sigs.k8s.io/kustomize/api v0.6.2
-	sigs.k8s.io/kustomize/cmd/config v0.8.1
+	sigs.k8s.io/kustomize/api v0.8.9
+	sigs.k8s.io/kustomize/cmd/config v0.9.11
+	sigs.k8s.io/kustomize/kyaml v0.10.19
 	sigs.k8s.io/yaml v1.2.0
 )
 
 exclude (
-	github.com/Azure/go-autorest v12.0.0+incompatible
-	github.com/russross/blackfriday v2.0.0+incompatible
 	sigs.k8s.io/kustomize/api v0.2.0
 	sigs.k8s.io/kustomize/cmd/config v0.2.0
 )
 
+replace sigs.k8s.io/kustomize/kyaml => ../kyaml
+
+replace sigs.k8s.io/kustomize/cmd/config => ../cmd/config
+
+replace sigs.k8s.io/kustomize/api => ../api
+
 replace (
-	github.com/docker/docker => github.com/moby/moby v0.7.3-0.20190826074503-38ab9da00309
-	k8s.io/apimachinery => k8s.io/apimachinery v0.17.0
-	k8s.io/client-go => k8s.io/client-go v0.17.0
-	k8s.io/kubectl => k8s.io/kubectl v0.0.0-20191219154910-1528d4eea6dd
-	sigs.k8s.io/kustomize/api => ../api
-	sigs.k8s.io/kustomize/cmd/config v0.8.1 => ../cmd/config
+	github.com/docker/distribution => github.com/docker/distribution v0.0.0-20191216044856-a8371794149d
+	github.com/docker/docker => github.com/moby/moby v17.12.0-ce-rc1.0.20200618181300-9dc6525e6118+incompatible
+	k8s.io/api => k8s.io/api v0.20.4
+	k8s.io/client-go => k8s.io/client-go v0.20.4
+	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20210323165736-1a6458611d18
+	k8s.io/kube-openapi/compat => ../compat/k8s.io/kube-openapi
 )

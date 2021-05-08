@@ -10,12 +10,12 @@ func TestRoleBindingAcrossNamespace(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t)
 	defer th.Reset()
 
-	th.WriteK("/app", `
+	th.WriteK(".", `
 resources:
 - resource.yaml
 nameSuffix: -ns2
 `)
-	th.WriteF("/app/resource.yaml", `
+	th.WriteF("resource.yaml", `
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -77,7 +77,7 @@ subjects:
     namespace: ns1
 `)
 
-	m := th.Run("/app", th.MakeDefaultOptions())
+	m := th.Run(".", th.MakeDefaultOptions())
 	th.AssertActualEqualsExpected(m, `
 apiVersion: v1
 kind: ServiceAccount
@@ -145,12 +145,12 @@ func TestRoleBindingAcrossNamespaceWoSubjects(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t)
 	defer th.Reset()
 
-	th.WriteK("/app", `
+	th.WriteK(".", `
 resources:
 - resource.yaml
 nameSuffix: -ns2
 `)
-	th.WriteF("/app/resource.yaml", `
+	th.WriteF("resource.yaml", `
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -181,7 +181,7 @@ roleRef:
   name: my-role
 `)
 
-	m := th.Run("/app", th.MakeDefaultOptions())
+	m := th.Run(".", th.MakeDefaultOptions())
 	th.AssertActualEqualsExpected(m, `
 apiVersion: v1
 kind: ServiceAccount
@@ -211,5 +211,134 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: my-role-ns2
+`)
+}
+
+// The ServiceAccount in subjects in role binding can be across namespace
+// but the roleRef is not. This test is used to cover such case.
+func TestRoleBindingWhenSubjectsAcrossNamespace(t *testing.T) {
+	th := kusttest_test.MakeEnhancedHarness(t)
+	defer th.Reset()
+	th.WriteK(".", `
+resources:
+- ./ns1
+- ./ns2
+`)
+	th.WriteK("ns1", `
+namespace: namespace-1
+resources:
+- role-ns1.yaml
+- rolebinding-ns1.yaml
+`)
+	th.WriteF("ns1/role-ns1.yaml", `
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: testRole
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+`)
+	th.WriteF("ns1/rolebinding-ns1.yaml", `
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: testRoleBinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: testRole
+subjects:
+  - kind: ServiceAccount
+    name: testAccount
+    namespace: namespace-2
+`)
+	th.WriteK("ns2", `
+namespace: namespace-2
+resources:
+- role-ns2.yaml
+- rolebinding-ns2.yaml
+`)
+	th.WriteF("ns2/role-ns2.yaml", `
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: testRole
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+`)
+	th.WriteF("ns2/rolebinding-ns2.yaml", `
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: testRoleBinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: testRole
+subjects:
+  - kind: ServiceAccount
+    name: testAccount
+    namespace: namespace-1
+`)
+
+	m := th.Run(".", th.MakeDefaultOptions())
+	th.AssertActualEqualsExpected(m, `
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: testRole
+  namespace: namespace-1
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: testRoleBinding
+  namespace: namespace-1
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: testRole
+subjects:
+- kind: ServiceAccount
+  name: testAccount
+  namespace: namespace-2
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: testRole
+  namespace: namespace-2
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: testRoleBinding
+  namespace: namespace-2
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: testRole
+subjects:
+- kind: ServiceAccount
+  name: testAccount
+  namespace: namespace-1
 `)
 }

@@ -68,6 +68,7 @@ func (l Walker) walkMap() (*yaml.RNode, error) {
 			Visitor:               l,
 			Schema:                s,
 			Sources:               fv,
+			MergeOptions:          l.MergeOptions,
 			Path:                  append(l.Path, key)}.Walk()
 		if err != nil {
 			return nil, err
@@ -112,7 +113,7 @@ func (l Walker) valueIfPresent(node *yaml.MapNode) (*yaml.RNode, *openapi.Resour
 	if err = fm.Read(node.Value); err == nil {
 		s = &openapi.ResourceSchema{Schema: &fm.Schema}
 		if fm.Schema.Ref.String() != "" {
-			r, err := openapi.Resolve(&fm.Schema.Ref)
+			r, err := openapi.Resolve(&fm.Schema.Ref, openapi.Schema())
 			if err == nil && r != nil {
 				s.Schema = r
 			}
@@ -126,7 +127,7 @@ func (l Walker) valueIfPresent(node *yaml.MapNode) (*yaml.RNode, *openapi.Resour
 			s = &openapi.ResourceSchema{Schema: &fm.Schema}
 		}
 		if fm.Schema.Ref.String() != "" {
-			r, err := openapi.Resolve(&fm.Schema.Ref)
+			r, err := openapi.Resolve(&fm.Schema.Ref, openapi.Schema())
 			if err == nil && r != nil {
 				s.Schema = r
 			}

@@ -135,16 +135,20 @@ func (p *ValuesFilePlugin) Transform(m resmap.ResMap) error {
 			return err
 		}
 		ValuePrefixed := map[string]interface{}{"values": Values}
-
-		mergedFile, err := p.mergeFiles(r.Map(), ValuePrefixed)
-		if err != nil {
-			p.logger.Printf("error executing mergeFiles(), error: %v\n", err)
+		if rmap, err := r.Map(); err != nil {
+			p.logger.Printf("error call resource.Map %v\n", err)
 			return err
-		}
-		if jsonBytes, err := json.Marshal(mergedFile); err != nil {
-			return err
-		} else if err := r.UnmarshalJSON(jsonBytes); err != nil {
-			return err
+		} else {
+			mergedFile, err := p.mergeFiles(rmap, ValuePrefixed)
+			if err != nil {
+				p.logger.Printf("error executing mergeFiles(), error: %v\n", err)
+				return err
+			}
+			if jsonBytes, err := json.Marshal(mergedFile); err != nil {
+				return err
+			} else if err := r.UnmarshalJSON(jsonBytes); err != nil {
+				return err
+			}
 		}
 	}
 

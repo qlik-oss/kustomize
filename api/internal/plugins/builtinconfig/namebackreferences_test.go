@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
-	"sigs.k8s.io/kustomize/api/resid"
 	"sigs.k8s.io/kustomize/api/types"
+	"sigs.k8s.io/kustomize/kyaml/resid"
 )
 
 func TestMergeAll(t *testing.T) {
@@ -50,13 +50,13 @@ func TestMergeAll(t *testing.T) {
 			Gvk: resid.Gvk{
 				Kind: "ConfigMap",
 			},
-			FieldSpecs: fsSlice1,
+			Referrers: fsSlice1,
 		},
 		{
 			Gvk: resid.Gvk{
 				Kind: "Secret",
 			},
-			FieldSpecs: fsSlice2,
+			Referrers: fsSlice2,
 		},
 	}
 	nbrsSlice2 := nbrSlice{
@@ -64,13 +64,13 @@ func TestMergeAll(t *testing.T) {
 			Gvk: resid.Gvk{
 				Kind: "ConfigMap",
 			},
-			FieldSpecs: fsSlice1,
+			Referrers: fsSlice1,
 		},
 		{
 			Gvk: resid.Gvk{
 				Kind: "Secret",
 			},
-			FieldSpecs: fsSlice2,
+			Referrers: fsSlice2,
 		},
 	}
 	expected := nbrSlice{
@@ -78,13 +78,13 @@ func TestMergeAll(t *testing.T) {
 			Gvk: resid.Gvk{
 				Kind: "ConfigMap",
 			},
-			FieldSpecs: fsSlice1,
+			Referrers: fsSlice1,
 		},
 		{
 			Gvk: resid.Gvk{
 				Kind: "Secret",
 			},
-			FieldSpecs: fsSlice2,
+			Referrers: fsSlice2,
 		},
 	}
 	actual, err := nbrsSlice1.mergeAll(nbrsSlice2)

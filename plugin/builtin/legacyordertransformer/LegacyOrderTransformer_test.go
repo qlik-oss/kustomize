@@ -4,8 +4,9 @@
 package main_test
 
 import (
-	kusttest_test "sigs.k8s.io/kustomize/api/testutils/kusttest"
 	"testing"
+
+	kusttest_test "sigs.k8s.io/kustomize/api/testutils/kusttest"
 )
 
 func TestLegacyOrderTransformer(t *testing.T) {
@@ -65,7 +66,7 @@ metadata:
   name: apricot
 `)
 
-	th.AssertActualEqualsExpected(rm, `
+	th.AssertActualEqualsExpectedNoIdAnnotations(rm, `
 apiVersion: v1
 kind: Namespace
 metadata:

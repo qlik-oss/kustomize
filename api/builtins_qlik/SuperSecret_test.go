@@ -8,11 +8,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"sigs.k8s.io/kustomize/api/filesys"
-	"sigs.k8s.io/kustomize/api/k8sdeps/kunstruct"
 	"sigs.k8s.io/kustomize/api/loader"
+	"sigs.k8s.io/kustomize/api/provider"
 	"sigs.k8s.io/kustomize/api/resmap"
-	"sigs.k8s.io/kustomize/api/resource"
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
+	"sigs.k8s.io/kustomize/api/types"
 )
 
 func TestSuperSecret_simpleTransformer(t *testing.T) {
@@ -245,8 +245,8 @@ data:
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			resourceFactory := resmap.NewFactory(resource.NewFactory(
-				kunstruct.NewKunstructuredFactoryImpl()), nil)
+			p := provider.NewDefaultDepProvider()
+			resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 
 			resMap, err := resourceFactory.NewResMapFromBytes([]byte(testCase.pluginInputResources))
 			if err != nil {
@@ -255,7 +255,7 @@ data:
 
 			plugin := NewSuperSecretTransformerPlugin()
 
-			err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
+			err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig()), []byte(testCase.pluginConfig))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
 			}
@@ -485,12 +485,12 @@ prefix: some-service-
 							assert.NoError(t, err)
 							assert.True(t, match)
 
-							resourceFactory := resmap.NewFactory(resource.NewFactory(
-								kunstruct.NewKunstructuredFactoryImpl()), nil)
+							p := provider.NewDefaultDepProvider()
+							resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 
 							plugin := NewSuperSecretGeneratorPlugin()
 
-							err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory), []byte(`
+							err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig()), []byte(`
 apiVersion: qlik.com/v1
 kind: SuperSecret
 metadata:
@@ -508,7 +508,7 @@ prefix: some-service-
 
 							tempRes.SetName(fmt.Sprintf("some-service-%s", tempRes.GetName()))
 
-							hash, err := kunstruct.NewKunstructuredFactoryImpl().Hasher().Hash(tempRes)
+							hash, err := tempRes.Hash(p.GetResourceFactory().Hasher())
 							assert.NoError(t, err)
 							assert.Equal(t, fmt.Sprintf("%s-%s", tempRes.GetName(), hash), refName)
 
@@ -524,9 +524,8 @@ prefix: some-service-
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			resourceFactory := resmap.NewFactory(resource.NewFactory(
-				kunstruct.NewKunstructuredFactoryImpl()), nil)
-
+			p := provider.NewDefaultDepProvider()
+			resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 			resMap, err := resourceFactory.NewResMapFromBytes([]byte(testCase.pluginInputResources))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
@@ -534,7 +533,7 @@ prefix: some-service-
 
 			plugin := NewSuperSecretTransformerPlugin()
 
-			err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
+			err = plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig()), []byte(testCase.pluginConfig))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
 			}
@@ -580,8 +579,8 @@ options:
 						assert.False(t, res.NeedHashSuffix())
 
 						data, err := res.GetFieldValue("data")
-						assert.Error(t, err)
-						assert.Nil(t, data)
+						assert.NoError(t, err)
+						assert.NotNil(t, data)
 
 						break
 					}
@@ -658,8 +657,8 @@ behavior: create
 						assert.True(t, res.NeedHashSuffix())
 
 						data, err := res.GetFieldValue("data")
-						assert.Error(t, err)
-						assert.Nil(t, data)
+						assert.NoError(t, err)
+						assert.NotNil(t, data)
 
 						break
 					}
@@ -714,11 +713,11 @@ behavior: create
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			resourceFactory := resmap.NewFactory(resource.NewFactory(
-				kunstruct.NewKunstructuredFactoryImpl()), nil)
+			p := provider.NewDefaultDepProvider()
+			resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 
 			plugin := NewSuperSecretGeneratorPlugin()
-			err := plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory), []byte(testCase.pluginConfig))
+			err := plugin.Config(resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig()), []byte(testCase.pluginConfig))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
 			}

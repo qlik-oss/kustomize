@@ -1,49 +1,63 @@
 # kustomization of a helm chart
 
+[`helm`]: https://helm.sh
 [last mile]: https://testingclouds.wordpress.com/2018/07/20/844/
-[stable chart]: https://github.com/helm/charts/tree/master/stable
-[Helm charts]: https://github.com/helm/charts
-[_minecraft_]: https://github.com/helm/charts/tree/master/stable/minecraft
+[artifact hub]: https://artifacthub.io
+[_minecraft_]: https://artifacthub.io/packages/helm/minecraft-server-charts/minecraft
 [plugin]: ../docs/plugins
+[built]: https://kubectl.docs.kubernetes.io/references/kustomize/kustomization
 
-[Helm charts] aren't natively read by kustomize, but
-kustomize has a [plugin] system that allows one to
-access helm charts.
+Kustomize is [built] from _generators_ and
+_transformers_; the former make kubernetes YAML, the
+latter transform said YAML.
 
-One pattern combining kustomize and helm is
-the [last mile] modification, where
-one uses an inflated chart as a base, then
-modifies it on the way to the cluster using
-kustomize.
+Kustomize, via the `helmCharts` field, has the ability to
+use the [`helm`] command line program in a subprocess to
+inflate a helm chart, generating YAML as part of (or as the
+entirety of) a kustomize base.
 
-The plugin used in the example below is coded to work
-only for charts found in the [stable chart] repo.  The
-example arbitrarily uses [_minecraft_], but should work
-for any chart.
+This YAML can then be modified either in the base directly
+(transformers always run _after_ generators), or via
+a kustomize overlay.
 
-The following example assumes you have `helm`
-on your `$PATH`.
+Either approach can be viewed as [last mile] modification
+of the chart output before applying it to a cluster.
+
+The example below arbitrarily uses the
+[_minecraft_] chart pulled from the [artifact hub]
+chart repository.
+
+## Preparation
+
+This example defines the `helm` command as
+<!-- @defineHelmCommand @testHelm -->
+```
+helmCommand=~/go/bin/helmV3
+```
+
+This value is needed for testing this example in CI/CD.
+A user doesn't need this if their binary is called
+`helm` and is on their shell's `PATH`.
+
 
 Make a place to work:
 
-<!-- @makeWorkplace @helmtest -->
+<!-- @makeWorkplace @testHelm -->
 ```
 DEMO_HOME=$(mktemp -d)
-mkdir -p $DEMO_HOME/base
-mkdir -p $DEMO_HOME/dev
-mkdir -p $DEMO_HOME/prod
+mkdir -p $DEMO_HOME/base $DEMO_HOME/dev $DEMO_HOME/prod
 ```
 
-## Use a remote chart
+## Define some variants
 
 Define a kustomization representing your _development_
-variant (aka environment).
+variant.
 
 This could involve any number of kustomizations (see
 other examples), but in this case just add the name
-prefix `dev-` to all resources:
+prefix '`dev-`' to all resources:
 
-<!-- @writeKustDev @helmtest -->
+<!-- @writeKustDev @testHelm -->
 ```
 cat <<'EOF' >$DEMO_HOME/dev/kustomization.yaml
 namePrefix:  dev-
@@ -53,9 +67,9 @@ EOF
 ```
 
 Likewise define a _production_ variant, with a name
-prefix `prod-`:
+prefix '`prod-`':
 
-<!-- @writeKustProd @helmtest -->
+<!-- @writeKustProd @testHelm -->
 ```
 cat <<'EOF' >$DEMO_HOME/prod/kustomization.yaml
 namePrefix:  prod-
@@ -66,56 +80,30 @@ EOF
 
 These two variants refer to a common base.
 
-Define this base:
+Define this base the usual way by creating a
+`kustomization` file:
 
-<!-- @writeKustDev @helmtest -->
+<!-- @writeKustBase @testHelm -->
 ```
 cat <<'EOF' >$DEMO_HOME/base/kustomization.yaml
-generators:
-- chartInflator.yaml
+helmCharts:
+- name: minecraft
+  valuesInline:
+    minecraftServer:
+      eula: true
+      difficulty: hard
+      rcon:
+        enabled: true
+  releaseName: moria
+  version: 3.1.3
+  repo: https://itzg.github.io/minecraft-server-charts
 EOF
 ```
 
-The base refers to a generator configuration file
-called `chartInflator.yaml`.
+The only thing in this particular file is a `helmCharts`
+field, specifying a single chart.
 
-This file lets one specify the name of a [stable chart],
-and other things like a path to a values file, defaulting
-to the `values.yaml` that comes with the chart.
-
-Create the config file `chartInflator.yaml`, specifying
-the arbitrarily chosen chart name _minecraft_:
-
-<!-- @writeGeneratorConfig @helmtest -->
-```
-cat <<'EOF' >$DEMO_HOME/base/chartInflator.yaml
-apiVersion: someteam.example.com/v1
-kind: ChartInflator
-metadata:
-  name: notImportantHere
-chartName: minecraft
-EOF
-```
-
-Because this particular YAML file is listed in the
-`generators:` stanza of a kustomization file, it is
-treated as the binding between a generator plugin -
-identified by the _apiVersion_ and _kind_ fields - and
-other fields that configure the plugin.
-
-Download the plugin to your `DEMO_HOME` and make it
-executable:
-
-<!-- @installPlugin @helmtest -->
-```
-plugin=plugin/someteam.example.com/v1/chartinflator/ChartInflator
-curl -s --create-dirs -o \
-"$DEMO_HOME/kustomize/$plugin" \
-"https://raw.githubusercontent.com/\
-kubernetes-sigs/kustomize/master/$plugin"
-
-chmod a+x $DEMO_HOME/kustomize/$plugin
-```
+The `valuesInline` field overrides some native chart values.
 
 Check the directory layout:
 
@@ -129,127 +117,249 @@ Expect something like:
 > ```
 > /tmp/whatever
 > ├── base
-> │   ├── chartInflator.yaml
-> │   └── kustomization.yaml
+> │  └── kustomization.yaml
 > ├── dev
-> │   └── kustomization.yaml
-> ├── kustomize
-> │   └── plugin
-> │       └── someteam.example.com
-> │           └── v1
-> │               └── chartinflator
-> │                  └── ChartInflator
+> │  └── kustomization.yaml
 > └── prod
 >    └── kustomization.yaml
 > ```
 
-Define a helper function to run kustomize with the
-correct environment and flags for plugins:
+### Helm related flags
 
-<!-- @defineKustomizeIt @helmtest -->
+Attempt to build the `base`:
+
+<!-- @checkFailure @testHelm -->
+```
+cmd="kustomize build --helm-command $helmCommand $DEMO_HOME/base"
+if ($cmd); then
+   echo "Build should fail!" && false  # Force test to fail.
+else
+   echo "Build failed because no --enable-helm flag (desired outcome)."
+fi
+```
+
+This `build` fails and complains about a missing
+`--enable-helm` flag.
+
+The flag `--enable-helm` exists to have the user
+acknowledge that kustomize is running an external program as
+part of the `build` step.  It's like the
+`--enable-plugins` flag, but with a helm focus.
+
+The flag `--helm-command` has a default value (`helm` of
+course) so it's not suitable as an enablement flag.  A user
+with `helm` on their `PATH` need not awkwardly specify
+`'--helm-command helm'`.
+
+Given the above, define a helper function to run `kustomize` with the
+flags required for `helm` use in this demo:
+
+<!-- @defineKustomizeIt @testHelm -->
 ```
 function kustomizeIt {
-  XDG_CONFIG_HOME=$DEMO_HOME \
-  kustomize build --enable_alpha_plugins \
+  kustomize build \
+    --enable-helm \
+    --helm-command $helmCommand \
     $DEMO_HOME/$1
 }
 ```
+### Build the base and the variants
 
-Finally, build the `prod` variant.  Notice that all
-resource  names now have the `prod-` prefix:
+Now build the `base`:
 
-<!-- @doProd @helmtest -->
+<!-- @showBase @testHelm -->
 ```
-clear
-kustomizeIt prod
+kustomizeIt base
 ```
 
-Compare `dev` to `prod`:
+This works, and you see an inflated chart complete
+with a `Secret`, `Service`, `Deployment`, etc.
+
+As a side effect of this build, kustomize pulled the chart
+and placed it in the `charts` subdirectory of the base.
+Take a look:
+
+<!-- @tree -->
+```
+tree $DEMO_HOME
+```
+
+If the chart had already been there, kustomize would
+not have tried to pull it.
+
+To change the location of the charts, use this
+in your kustomization file:
+
+> ```
+> helmGlobals:
+>  chartHome: charts
+> ```
+
+Change `charts` as desired, but it's best to keep it
+in (or below) the same directory as the `kustomization.yaml` file.
+If it's outside the kustomization root, the `build` command will
+fail unless given the flag `'--load-restrictor=none'` to
+disable file loading restrictions.
+
+Now build the two variants `dev` and `prod`
+and compare their differences:
 
 <!-- @doCompare -->
 ```
 diff <(kustomizeIt dev) <(kustomizeIt prod) | more
 ```
 
-To see the unmodified but inflated chart, run kustomize
-on the base.  Every invocation here is re-downloading
-and re-inflating the chart.
+This shows so-called _last mile hydration_ of two variants
+made from a common base that happens to be generated from a
+helm chart.
 
-<!-- @showBase @helmtest -->
+## How does the pull work?
+
+The command kustomize used to download the chart
+is something like
+
+> ```
+> $helmCommand pull \
+>    --untar \
+>    --untardir $DEMO_HOME/base/charts \
+>    --repo https://itzg.github.io/minecraft-server-charts \
+>    --version 3.1.3 \
+>    minecraft
+> ```
+
+The first use of kustomize above (when the `base` was
+expanded) fetched the chart and placed it in the `charts`
+directory next to the `kustomization.yaml` file.
+
+This chart was reused, _not_ re-fetched, with the variant
+expansions `prod` and `dev`.
+
+If a chart exists, kustomize will not overwrite it (so to
+suppress a pull, simply assure the chart is already in your
+kustomization root).  kustomize won't check dates or version
+numbers or do anything that smells like cache management.
+
+> kustomize is a YAML manipulator.  It's not a manager
+> of a cache of things downloaded from the internet.
+
+## The pull happens once.
+
+To show that the locally stored chart is being re-used, modify
+its _values_ file.
+
+First make note of the password encoded in the production
+inflation:
+
+<!-- @checkPassword @testHelm -->
 ```
-kustomizeIt base
-```
-
-
-## Use a local chart
-
-The example above fetches a new copy of the chart
-to a temporary directory with each kustomize
-build, because a local chart home isn't specified
-in the configuration.
-
-To suppress fetching, specify a _chart home_
-explicitly, and just make sure the chart is already
-there.
-
-To demo this so that it won't interfere with your
-existing helm environment, do this:
-
-<!-- @helmInit @helmtest -->
-```
-helmHome=$DEMO_HOME/dothelm
-chartHome=$DEMO_HOME/base/charts
-
-function doHelm {
-  helm --home $helmHome $@
-}
-
-# Create helm config files in a new location.
-# The init command is extremely chatty
-doHelm init --client-only >& /dev/null
-```
-
-Now download a chart; again use _minecraft_
-(but you could use anything):
-
-<!-- @fetchChart @helmtest -->
-```
-doHelm fetch --untar \
-    --untardir $chartHome \
-    stable/minecraft
+test 1 == $(kustomizeIt prod | grep -c "rcon-password: Q0hBTkdFTUUh")
 ```
 
-The tree has more stuff now; helm config data
-and a complete copy of the chart:
-<!-- @tree -->
-```
-tree $DEMO_HOME
-```
+The above command succeeds if the value of the generated
+password is as shown (`Q0hBTkdFTUUh`).
 
+Now change the password in the local values file:
 
-Add a `chartHome` field to the generator config file so
-that it knows where to find the local chart:
-
-<!-- @modifyGenConfig @helmtest -->
+<!-- @valueChange @testHelm -->
 ```
-echo "chartHome: $chartHome" >>$DEMO_HOME/base/chartInflator.yaml
+values=$DEMO_HOME/base/charts/minecraft/values.yaml
+
+grep CHANGEME $values
+sed -i 's/CHANGEME/SOMETHING_ELSE/' $values
+grep SOMETHING_ELSE $values
 ```
 
-Change the values file, to show that the results
-generated below are from the _locally_ stored chart:
+Run the build, and confirm that the same `rcon-password`
+field in the output has a new value, confirming that the
+chart used was a _local_ chart, not a chart freshly
+downloaded from the internet:
 
-<!-- @valueChange @helmtest -->
-```
-sed -i 's/CHANGEME!/SOMETHINGELSE/' $chartHome/minecraft/values.yaml
-sed -i 's/LoadBalancer/NodePort/' $chartHome/minecraft/values.yaml
-```
 
-Finally, built it
-
-<!-- @finalProd @helmtest -->
+<!-- @checkPassword2 @testHelm -->
 ```
-kustomizeIt prod
+test 1 == $(kustomizeIt prod | grep -c "rcon-password: U09NRVRISU5HX0VMU0Uh")
 ```
 
-and observe the change from `LoadBalancer` to `NodePort`, and 
-the change in the encoded password.
+Finally, clean up:
+
+<!-- @showBase @testHelm -->
+```
+rm -r $DEMO_HOME
+```
+
+## Performance
+
+To recap, the helm-related kustomization fields make
+kustomize run
+
+> ```
+> helm pull ...
+> helm template ...
+> ```
+
+_as a convenience for the user_ to generate YAML from a helm chart.
+
+Helm's `pull` command downloads the chart.  Helm's `template`
+command inflates the chart template, spitting the inflated
+template to stdout (where kustomize captures it) rather than
+immediately sending it to a cluster as `helm install`
+would.
+
+To improve performance, a user can retain the chart after
+the first pull, and commit the chart to their configuration
+repository (below the `kustomization.yaml` file that refers
+to it).  kustomize only tries to pull the chart if it's not
+already there.
+
+To further improve performance, a user can inflate the
+chart themselves at the command line, e.g.
+
+> ```
+> helm template {releaseName} \
+>     --values {valuesFile} \
+>     --version {version} \
+>     --repo {repo} \
+>     {chartName} > {chartName}.yaml
+> ```
+
+then commit the resulting `{chartName}.yaml` file to a git
+repo as a configuration base, mentioning that file as a
+`resource` in a `kustomization.yaml` file, e.g.
+
+> ```
+> resources:
+> - minecraft_v3.1.3_Chart.yaml
+> ```
+
+The user should choose when or if to refresh their local
+copy of the chart's inflation.  kustomize would have no
+awareness that the YAML was generated by helm, and kustomize
+wouldn't run `helm` during the `build`.  This is analogous
+to `Go` module vendoring.
+
+### But it's not really about performance.
+
+Although the `helm` related fields discussed above are handy
+for experimentation and development, it's best to avoid them
+in production.
+
+The same argument applies to using _remote_ git URL's in
+other kustomization fields.  Handy for experimentation,
+but ill-advised in production.
+
+It's irresponsible to depend on a remote configuration
+that's _not under your control_.  Annoying enablement flags
+like `'--enable-helm'` are intended to _remind_ one of a
+risk, but offer zero protection from risk.  Further, they
+are useless are reminders, since __annoying things are
+immediately scripted away and forgotten__, as was done above
+in the `kustomizeIt` shell function.
+
+## Best practice
+
+Don't use remote configuration that you don't control in
+production.
+
+Maintain a _local, inflated fork_ of a remote configuration,
+and have a human rebase / reinflate that fork from time to
+time to capture upstream changes.

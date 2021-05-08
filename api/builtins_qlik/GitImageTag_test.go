@@ -12,13 +12,13 @@ import (
 	"testing"
 
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
+	"sigs.k8s.io/kustomize/api/provider"
+	"sigs.k8s.io/kustomize/api/types"
 
 	"github.com/pkg/errors"
 	"sigs.k8s.io/kustomize/api/filesys"
-	"sigs.k8s.io/kustomize/api/k8sdeps/kunstruct"
 	"sigs.k8s.io/kustomize/api/loader"
 	"sigs.k8s.io/kustomize/api/resmap"
-	"sigs.k8s.io/kustomize/api/resource"
 	valtest_test "sigs.k8s.io/kustomize/api/testutils/valtest"
 )
 
@@ -456,8 +456,8 @@ spec:
 	plugin := GitImageTagPlugin{logger: log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds)}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			resourceFactory := resmap.NewFactory(resource.NewFactory(kunstruct.NewKunstructuredFactoryImpl()), nil)
-
+			p := provider.NewDefaultDepProvider()
+			resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 			resMap, err := resourceFactory.NewResMapFromBytes([]byte(testCase.pluginInputResources))
 			if err != nil {
 				t.Fatalf("Err: %v", err)
@@ -468,7 +468,7 @@ spec:
 				t.Fatalf("Err: %v", err)
 			}
 
-			h := resmap.NewPluginHelpers(ldr, valtest_test.MakeHappyMapValidator(t), resourceFactory)
+			h := resmap.NewPluginHelpers(ldr, valtest_test.MakeHappyMapValidator(t), resourceFactory, types.DisabledPluginConfig())
 			if err := plugin.Config(h, []byte(testCase.pluginConfig)); err != nil {
 				t.Fatalf("Err: %v", err)
 			}
