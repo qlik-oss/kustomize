@@ -16,7 +16,7 @@ func AddFlagLoadRestrictor(set *pflag.FlagSet) {
 	set.StringVar(
 		&theFlags.loadRestrictor,
 		flagLoadRestrictorName,
-		types.LoadRestrictionsRootOnly.String(),
+		types.LoadRestrictionsNone.String(),
 		"if set to '"+types.LoadRestrictionsNone.String()+
 			"', local kustomizations may load files from outside their root. "+
 			"This does, however, break the "+
