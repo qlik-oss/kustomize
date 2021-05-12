@@ -162,7 +162,7 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 }
 
 func getReplacementValue(res *resource.Resource, fieldPath string) (string, interface{}, error) {
-	if val, err := res.GetFieldValue(fieldPath); err != nil {
+	if val, err := utils.GetFieldValue(res.Node(), fieldPath); err != nil {
 		return "", nil, err
 	} else {
 		switch newValue := val.(type) {
