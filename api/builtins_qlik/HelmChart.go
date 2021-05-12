@@ -25,6 +25,7 @@ import (
 	"helm.sh/helm/v3/pkg/downloader"
 	"helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/helmpath"
+	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/repo"
 	"k8s.io/client-go/util/homedir"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
@@ -487,7 +488,20 @@ func (p *HelmChartPlugin) loadChartWithDependencies(settings *cli.EnvSettings, c
 			if err := p.helmConfigForDependencies(settings, c); err != nil {
 				return nil, err
 			}
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return nil, err
+			}
+			credentialsFile := filepath.Join(home, ".docker", "config.json")
 
+			registryClient, err := registry.NewClient(
+				registry.ClientOptDebug(settings.Debug),
+				registry.ClientOptWriter(p.logger.Writer()),
+				registry.ClientOptCredentialsFile(credentialsFile),
+			)
+			if err != nil {
+				return nil, err
+			}
 			man := &downloader.Manager{
 				Out:              p.logger.Writer(),
 				ChartPath:        chartPath,
@@ -495,6 +509,7 @@ func (p *HelmChartPlugin) loadChartWithDependencies(settings *cli.EnvSettings, c
 				Getters:          getter.All(settings),
 				RepositoryConfig: settings.RepositoryConfig,
 				RepositoryCache:  settings.RepositoryCache,
+				RegistryClient:   registryClient,
 				Debug:            settings.Debug,
 				SkipUpdate:       true,
 			}

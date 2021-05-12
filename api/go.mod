@@ -32,6 +32,7 @@ replace sigs.k8s.io/kustomize/kyaml => ../kyaml
 replace (
 	github.com/docker/distribution => github.com/docker/distribution v0.0.0-20191216044856-a8371794149d
 	github.com/docker/docker => github.com/moby/moby v17.12.0-ce-rc1.0.20200618181300-9dc6525e6118+incompatible
+	helm.sh/helm/v3 => github.com/qlik-oss/helm/v3 v3.5.5-0.20210512001905-0b788664d855
 	k8s.io/api => k8s.io/api v0.20.4
 	k8s.io/client-go => k8s.io/client-go v0.20.4
 	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20210323165736-1a6458611d18
