@@ -251,9 +251,14 @@ func (p *HelmChartPlugin) helmFetchIfRequired(settings *cli.EnvSettings) error {
 		p.logger.Printf("error checking if chart was already fetched to path: %v, err: %v\n", chartDir, err)
 		return err
 	} else if !exists {
-		if repoName, err := p.helmConfigForChart(settings, p.ChartRepoName); err != nil {
-			return err
-		} else if err := p.helmFetch(settings, fmt.Sprintf("%v/%v", repoName, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
+		if !strings.HasPrefix(p.ChartRepo, "oci") {
+			if repoName, err := p.helmConfigForChart(settings, p.ChartRepoName); err != nil {
+				return err
+			} else if err := p.helmFetch(settings, fmt.Sprintf("%v/%v", repoName, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
+				p.logger.Printf("error fetching chart, err: %v\n", err)
+				return err
+			}
+		} else if err := p.helmFetch(settings, fmt.Sprintf("%v/%v", p.ChartRepo, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
 			p.logger.Printf("error fetching chart, err: %v\n", err)
 			return err
 		}
