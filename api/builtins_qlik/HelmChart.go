@@ -251,9 +251,14 @@ func (p *HelmChartPlugin) helmFetchIfRequired(settings *cli.EnvSettings) error {
 		p.logger.Printf("error checking if chart was already fetched to path: %v, err: %v\n", chartDir, err)
 		return err
 	} else if !exists {
-		if repoName, err := p.helmConfigForChart(settings, p.ChartRepoName); err != nil {
-			return err
-		} else if err := p.helmFetch(settings, fmt.Sprintf("%v/%v", repoName, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
+		if !strings.HasPrefix(p.ChartRepo, "oci") {
+			if repoName, err := p.helmConfigForChart(settings, p.ChartRepoName); err != nil {
+				return err
+			} else if err := p.helmFetch(settings, fmt.Sprintf("%v/%v", repoName, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
+				p.logger.Printf("error fetching chart, err: %v\n", err)
+				return err
+			}
+		} else if err := p.helmOciFetch(settings, fmt.Sprintf("%v/%v", p.ChartRepo, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
 			p.logger.Printf("error fetching chart, err: %v\n", err)
 			return err
 		}
@@ -395,6 +400,40 @@ func (p *HelmChartPlugin) helmReposUpdate(settings *cli.EnvSettings) error {
 	return nil
 }
 
+func (p *HelmChartPlugin) helmOciFetch(settings *cli.EnvSettings, chartRef, version, chartUntarDirPath string) error {
+	pullConfig := new(action.Configuration)
+	if err := pullConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {}); err != nil {
+		return err
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	credentialsFile := filepath.Join(home, ".docker", "config.json")
+
+	registryClient, err := registry.NewClient(
+		registry.ClientOptDebug(settings.Debug),
+		registry.ClientOptWriter(p.logger.Writer()),
+		registry.ClientOptCredentialsFile(credentialsFile),
+	)
+	if err != nil {
+		return err
+	}
+	pullConfig.RegistryClient = registryClient
+	client := action.NewPullWithOpts(action.WithConfig(pullConfig))
+
+	client.Untar = true
+	client.UntarDir = chartUntarDirPath
+	client.Settings = settings
+	client.Version = version
+
+	fmt.Println(version)
+	fmt.Println(chartRef)
+	_, err = client.Run(chartRef)
+	return err
+
+}
 func (p *HelmChartPlugin) helmFetch(settings *cli.EnvSettings, chartRef, version, chartUntarDirPath string) error {
 	client := action.NewPull()
 	client.Untar = true
