@@ -519,6 +519,51 @@ fooSpec:
 			},
 		},
 		{
+			name: "object reference, source string target integer64 replace",
+			pluginConfig: `
+apiVersion: qlik.com/v1
+kind: SearchReplace
+metadata:
+ name: notImportantHere
+target:
+ kind: Foo
+ name: some-foo
+path: fooSpec/fooTemplate/fooContainers/env/value
+search: ^far$
+replace: '1234'
+replaceType: int64
+`,
+			pluginInputResources: `
+apiVersion: qlik.com/v1
+kind: Foo
+metadata:
+ name: some-foo
+fooSpec:
+ fooTemplate:
+   fooContainers:
+   - name: have-env
+     env:
+     - name: FOO
+       value: far
+`,
+			checkAssertions: func(t *testing.T, resMap resmap.ResMap) {
+				res := resMap.GetByIndex(0)
+
+				envVars, err := res.GetFieldValue("fooSpec.fooTemplate.fooContainers[0].env")
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+
+				fooEnvVar := envVars.([]interface{})[0].(map[string]interface{})
+				if "FOO" != fooEnvVar["name"].(string) {
+					t.Fatalf("unexpected: %v\n", fooEnvVar["name"].(string))
+				}
+				if 1234 != fooEnvVar["value"].(int) {
+					t.Fatalf("unexpected: %v\n", fooEnvVar["value"].(string))
+				}
+			},
+		},
+		{
 			name: "object reference, integer ref replace",
 			pluginConfig: `
 apiVersion: qlik.com/v1
