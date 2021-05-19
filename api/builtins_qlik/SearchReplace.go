@@ -234,8 +234,7 @@ func (p *SearchReplacePlugin) searchAndReplaceRNode(node *kyaml.RNode, base64Enc
 			}
 			switch targetType {
 
-			case "int":
-			case "int64":
+			case "int", "int64":
 				node.YNode().Value = strChanged
 				node.YNode().Tag = kyaml.NodeTagInt
 			case "bool":
