@@ -191,6 +191,29 @@ func (b *SuperMapPluginBase) generateNameWithHash(res *resource.Resource) (strin
 	return fmt.Sprintf("%s-%s", res.GetName(), hash), nil
 }
 
+func (b *SuperMapPluginBase) encodeBase64(s string) string {
+	const lineLen = 70
+	encLen := base64.StdEncoding.EncodedLen(len(s))
+	lines := encLen/lineLen + 1
+	buf := make([]byte, encLen*2+lines)
+	in := buf[0:encLen]
+	out := buf[encLen:]
+	base64.StdEncoding.Encode(in, []byte(s))
+	k := 0
+	for i := 0; i < len(in); i += lineLen {
+		j := i + lineLen
+		if j > len(in) {
+			j = len(in)
+		}
+		k += copy(out[k:], in[i:j])
+		if lines > 1 {
+			out[k] = '\n'
+			k++
+		}
+	}
+	return string(out[:k])
+}
+
 func (b *SuperMapPluginBase) appendData(res *resource.Resource, data map[string]interface{}, straightCopy bool) error {
 	if err := filtersutil.ApplyToJSON(kio.FilterFunc(func(nodes []*kyaml.RNode) ([]*kyaml.RNode, error) {
 		return kio.FilterAll(kyaml.FilterFunc(func(rn *kyaml.RNode) (*kyaml.RNode, error) {
@@ -214,7 +237,7 @@ func (b *SuperMapPluginBase) appendData(res *resource.Resource, data map[string]
 					val = v
 					if _, ok := v.(string); ok {
 						if !straightCopy && b.Decorator.ShouldBase64EncodeConfigData() {
-							val = base64.StdEncoding.EncodeToString([]byte(v.(string)))
+							val = b.encodeBase64(v.(string))
 						}
 					}
 					dataRnMap[k] = val
