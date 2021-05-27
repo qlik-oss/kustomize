@@ -12,9 +12,11 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 
+	"github.com/cnf/structhash"
 	version "github.com/hashicorp/go-version"
 	"github.com/traefik/yaegi/interp"
 	"github.com/traefik/yaegi/stdlib"
@@ -49,9 +51,9 @@ type GoGetterPlugin struct {
 	PreBuildArgs        []string `json:"preBuildArgs,omitempty" yaml:"preBuildArgs,omitempty"`
 	PreBuildScript      string   `json:"preBuildScript,omitempty" yaml:"preBuildScript,omitempty"`
 	PreBuildScriptFile  string   `json:"preBuildScriptFile,omitempty" yaml:"preBuildScriptFile,omitempty"`
-	PostBuildArgs       []string `json:"postBuildArgs,omitempty" yaml:"postBuildArgs,omitempty"`
-	PostBuildScript     string   `json:"postBuildScript,omitempty" yaml:"postBuildScript,omitempty"`
-	PostBuildScriptFile string   `json:"postBuildScriptFile,omitempty" yaml:"postBuildScriptFile,omitempty"`
+	PostBuildArgs       []string `json:"postBuildArgs,omitempty" yaml:"postBuildArgs,omitempty" hash:"-"`
+	PostBuildScript     string   `json:"postBuildScript,omitempty" yaml:"postBuildScript,omitempty" hash:"-"`
+	PostBuildScriptFile string   `json:"postBuildScriptFile,omitempty" yaml:"postBuildScriptFile,omitempty" hash:"-"`
 	PartialCloneDir     string   `json:"partialCloneDir,omitempty" yaml:"partialCloneDir,omitempty"`
 	/* CloneFilter
 	   The best filter would likely be the unsupported as of 2.30 "combine:blob:none+tree:0"
@@ -74,14 +76,14 @@ type GoGetterPlugin struct {
 		 git sparse-checkout set manifests ; \
 		 git checkout"
 	*/
-	CloneFilter        string `json:"cloneFilter,omitempty" yaml:"cloneFilter,omitempty"`
-	Pwd                string
-	ldr                ifc.Loader
-	rf                 *resmap.Factory
-	logger             *log.Logger
-	newldr             ifc.Loader
-	executableResolver iExecutableResolverT
-	yamlBytes          []byte
+	CloneFilter        string               `json:"cloneFilter,omitempty" yaml:"cloneFilter,omitempty hash:"-"`
+	Pwd                string               `hash:"-"`
+	ldr                ifc.Loader           `hash:"-"`
+	rf                 *resmap.Factory      `hash:"-"`
+	logger             *log.Logger          `hash:"-"`
+	newldr             ifc.Loader           `hash:"-"`
+	executableResolver iExecutableResolverT `hash:"-"`
+	yamlBytes          []byte               `hash:"-"`
 }
 
 // Config ...
@@ -110,6 +112,38 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 
 	repodir := filepath.Join(dir, "qlik", "v1", "repos")
 	dir = filepath.Join(repodir, p.ObjectMeta.Name)
+
+	var nogit bool
+	var kustBytes []byte
+	var cacheFileName string
+
+	runIDVar := strconv.Itoa(os.Getppid()) + "_KUZ_RUN_ID"
+	runID := os.Getenv(runIDVar)
+
+	// I'm the parent
+	if len(runID) == 0 {
+		runID = strconv.Itoa(os.Getpid())
+	}
+	cacheDirName := filepath.Join(dir, ".kuz_"+runID)
+
+	// Clean up and old .kuz_*
+	files, _ := filepath.Glob(filepath.Join(dir, ".kuz_*"))
+	for _, f := range files {
+		if f != cacheDirName {
+			os.RemoveAll(f)
+		}
+	}
+
+	cacheFileName = filepath.Join(cacheDirName, fmt.Sprintf("%x", structhash.Md5(p, 1)))
+	_, err = os.Stat(cacheDirName)
+	if err == nil {
+		nogit = true
+		_, err = os.Stat(cacheFileName)
+		if err == nil {
+			kustBytes, _ = ioutil.ReadFile(cacheFileName)
+		}
+	}
+	// Same repo in the same run, used cached
 	if err := os.MkdirAll(repodir, 0777); err != nil {
 		p.logger.Printf("error creating directory: %v, error: %v\n", dir, err)
 		return nil, err
@@ -122,92 +156,99 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 	}
 	url.Scheme = "https"
 
-	if err := p.executeGitGetter(url, dir); err != nil {
-		p.logger.Printf("Error fetching repository: %v\n", err)
-		return nil, err
+	if !nogit {
+		if err := p.executeGitGetter(url, dir); err != nil {
+			p.logger.Printf("Error fetching repository: %v\n", err)
+			return nil, err
+		}
+		os.MkdirAll(cacheDirName, 0777)
 	}
+	if kustBytes == nil {
+		currentExe, err := p.executableResolver.Executable()
+		if err != nil {
+			p.logger.Printf("Unable to get kustomize executable: %v\n", err)
+			return nil, err
+		}
 
-	currentExe, err := p.executableResolver.Executable()
-	if err != nil {
-		p.logger.Printf("Unable to get kustomize executable: %v\n", err)
-		return nil, err
-	}
+		cwd := dir
+		if len(p.Cwd) > 0 {
+			cwd = filepath.Join(dir, filepath.FromSlash(p.Cwd))
+		}
+		// Convert to relative path due to kustomize bug with drive letters
+		// thinks its a remote ref
+		oswd, _ := os.Getwd()
+		err = os.Chdir(cwd)
+		defer os.Chdir(oswd)
+		if err != nil {
+			p.logger.Printf("Error: Unable to set working dir %v: %v\n", cwd, err)
+			return nil, err
+		}
 
-	cwd := dir
-	if len(p.Cwd) > 0 {
-		cwd = filepath.Join(dir, filepath.FromSlash(p.Cwd))
-	}
-	// Convert to relative path due to kustomize bug with drive letters
-	// thinks its a remote ref
-	oswd, _ := os.Getwd()
-	err = os.Chdir(cwd)
-	defer os.Chdir(oswd)
-	if err != nil {
-		p.logger.Printf("Error: Unable to set working dir %v: %v\n", cwd, err)
-		return nil, err
-	}
+		if len(p.PreBuildScript) > 0 || len(p.PreBuildScriptFile) > 0 {
+			var (
+				gogetter = interp.Exports{
+					"gogetter": map[string]reflect.Value{
+						"GetKustomizedYaml": reflect.ValueOf(func() []byte {
+							return nil
+						}),
+						"GetGoGetter": reflect.ValueOf(func() []byte {
+							return p.yamlBytes
+						}),
+					},
+				}
+			)
 
-	if len(p.PreBuildScript) > 0 || len(p.PreBuildScriptFile) > 0 {
-		var (
-			gogetter = interp.Exports{
-				"gogetter": map[string]reflect.Value{
-					"GetKustomizedYaml": reflect.ValueOf(func() []byte {
-						return nil
-					}),
-					"GetGoGetter": reflect.ValueOf(func() []byte {
-						return p.yamlBytes
-					}),
-				},
+			i := interp.New(interp.Options{})
+
+			i.Use(stdlib.Symbols)
+			i.Use(yamlv3.Symbols)
+			i.Use(gogetter)
+
+			if len(p.PreBuildScript) > 0 {
+				_, err = i.Eval(p.PreBuildScript)
+			} else {
+				var gocode []byte
+				gocode, err = ioutil.ReadFile(p.PreBuildScriptFile)
+				if err != nil {
+					p.logger.Printf("Error loading go file: %v\n", err)
+					return nil, err
+				}
+				_, err = i.Eval(string(gocode))
 			}
-		)
-
-		i := interp.New(interp.Options{})
-
-		i.Use(stdlib.Symbols)
-		i.Use(yamlv3.Symbols)
-		i.Use(gogetter)
-
-		if len(p.PreBuildScript) > 0 {
-			_, err = i.Eval(p.PreBuildScript)
-		} else {
-			var gocode []byte
-			gocode, err = ioutil.ReadFile(p.PreBuildScriptFile)
 			if err != nil {
-				p.logger.Printf("Error loading go file: %v\n", err)
+				p.logger.Printf("Go Script Error: %v\n", err)
 				return nil, err
 			}
-			_, err = i.Eval(string(gocode))
+			v, err := i.Eval("kust.PreBuild")
+			if err != nil {
+				p.logger.Printf("Go Script Error: %v\n", err)
+				return nil, err
+			}
+			preBuild := v.Interface().(func([]string) error)
+			err = preBuild(p.PreBuildArgs)
+			if err != nil {
+				p.logger.Printf("Error from pre-Build: %v\n", err)
+				return nil, err
+			}
 		}
+		var kustomizedYaml bytes.Buffer
+		cmd := exec.Command(currentExe, "build", ".")
+		cmd.Env = os.Environ()
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%d_KUZ_RUN_ID=%s", os.Getpid(), runID))
+		err = p.getRunCommand(cmd, &kustomizedYaml)
 		if err != nil {
-			p.logger.Printf("Go Script Error: %v\n", err)
+			p.logger.Printf("Error executing kustomize as a child process: %v\n", err)
 			return nil, err
 		}
-		v, err := i.Eval("kust.PreBuild")
-		if err != nil {
-			p.logger.Printf("Go Script Error: %v\n", err)
-			return nil, err
-		}
-		preBuild := v.Interface().(func([]string) error)
-		err = preBuild(p.PreBuildArgs)
-		if err != nil {
-			p.logger.Printf("Error from pre-Build: %v\n", err)
-			return nil, err
-		}
+		kustBytes = kustomizedYaml.Bytes()
+		ioutil.WriteFile(cacheFileName, kustBytes, 0666)
 	}
-	var kustomizedYaml bytes.Buffer
-	cmd := exec.Command(currentExe, "build", ".")
-	err = p.getRunCommand(cmd, &kustomizedYaml)
-	if err != nil {
-		p.logger.Printf("Error executing kustomize as a child process: %v\n", err)
-		return nil, err
-	}
-	kustBytes := kustomizedYaml.Bytes()
 	if len(p.PostBuildScript) > 0 || len(p.PostBuildScriptFile) > 0 {
 		var (
 			gogetter = interp.Exports{
 				"gogetter": map[string]reflect.Value{
 					"GetKustomizedYaml": reflect.ValueOf(func() []byte {
-						return kustomizedYaml.Bytes()
+						return kustBytes
 					}),
 					"GetGoGetter": reflect.ValueOf(func() []byte {
 						return p.yamlBytes

@@ -3,6 +3,7 @@ module sigs.k8s.io/kustomize/kustomize/v4
 go 1.16
 
 require (
+	github.com/cnf/structhash v0.0.0-20201127153200-e1b16c1ebc08 // indirect
 	github.com/google/go-cmp v0.5.5
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/cobra v1.1.3
