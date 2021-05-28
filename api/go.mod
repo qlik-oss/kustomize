@@ -4,6 +4,7 @@ go 1.16
 
 require (
 	github.com/Masterminds/semver/v3 v3.1.1
+	github.com/cnf/structhash v0.0.0-20201127153200-e1b16c1ebc08 // indirect
 	github.com/evanphx/json-patch v4.9.0+incompatible
 	github.com/go-errors/errors v1.0.1
 	github.com/gofrs/flock v0.8.0
