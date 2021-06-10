@@ -401,6 +401,8 @@ func (p *HelmChartPlugin) helmReposUpdate(settings *cli.EnvSettings) error {
 }
 
 func (p *HelmChartPlugin) helmOciFetch(settings *cli.EnvSettings, chartRef, version, chartUntarDirPath string) error {
+	p.logger.Printf("Fetching chart chartRef: %v, Version: %v\n", chartRef, version)
+
 	pullConfig := new(action.Configuration)
 	if err := pullConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {}); err != nil {
 		return err
@@ -428,12 +430,10 @@ func (p *HelmChartPlugin) helmOciFetch(settings *cli.EnvSettings, chartRef, vers
 	client.Settings = settings
 	client.Version = version
 
-	fmt.Println(version)
-	fmt.Println(chartRef)
 	_, err = client.Run(chartRef)
 	return err
-
 }
+
 func (p *HelmChartPlugin) helmFetch(settings *cli.EnvSettings, chartRef, version, chartUntarDirPath string) error {
 	client := action.NewPull()
 	client.Untar = true
