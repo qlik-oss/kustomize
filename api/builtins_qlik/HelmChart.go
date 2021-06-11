@@ -408,11 +408,14 @@ func (p *HelmChartPlugin) helmOciFetch(settings *cli.EnvSettings, chartRef, vers
 		return err
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
+	credentialsFile, ok := os.LookupEnv("HELM_REGISTRY_CONFIG")
+	if !ok {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		credentialsFile = filepath.Join(home, ".docker", "config.json")
 	}
-	credentialsFile := filepath.Join(home, ".docker", "config.json")
 
 	registryClient, err := registry.NewClient(
 		registry.ClientOptDebug(settings.Debug),
