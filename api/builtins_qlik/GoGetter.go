@@ -500,11 +500,14 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 
 			if p.getRunCommand(cmd, &stdoutbuf) == nil {
 				localRef := strings.TrimSuffix(stdoutbuf.String(), "\n")
-				cmd = exec.Command("git", "rev-parse", ref)
+				cmd = exec.Command("git", "ls-remote", "--exit-code", "--heads", u.String(), ref)
 				cmd.Dir = dst
 				if p.getRunCommand(cmd, &stdoutbuf) == nil {
-					if strings.TrimSuffix(stdoutbuf.String(), "\n") == localRef {
-						update = false
+					remoteref := strings.Fields(stdoutbuf.String())
+					if len(remoteref) > 0 {
+						if remoteref[0] == localRef {
+							update = false
+						}
 					}
 				}
 			}
