@@ -21,7 +21,7 @@ import (
 	"github.com/traefik/yaegi/interp"
 	"github.com/traefik/yaegi/stdlib"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
-	yamlv3 "sigs.k8s.io/kustomize/api/builtins_qlik/yaegi"
+	"sigs.k8s.io/kustomize/api/builtins_qlik/yaegi/yamlv3"
 	"sigs.k8s.io/kustomize/api/filesys"
 	"sigs.k8s.io/kustomize/api/ifc"
 	"sigs.k8s.io/kustomize/api/konfig"
@@ -81,7 +81,6 @@ type GoGetterPlugin struct {
 	ldr                ifc.Loader           `hash:"-"`
 	rf                 *resmap.Factory      `hash:"-"`
 	logger             *log.Logger          `hash:"-"`
-	newldr             ifc.Loader           `hash:"-"`
 	executableResolver iExecutableResolverT `hash:"-"`
 	yamlBytes          []byte               `hash:"-"`
 }
