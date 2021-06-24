@@ -3,20 +3,20 @@ package builtins_qlik
 import (
 	"encoding/base64"
 	"fmt"
-	"log"
 
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 
 	"sigs.k8s.io/kustomize/api/builtins"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/yaml"
+	"go.uber.org/zap"
 )
 
 type SuperSecretPlugin struct {
 	StringData          map[string]string `json:"stringData,omitempty" yaml:"stringData,omitempty"`
 	Data                map[string]string `json:"data,omitempty" yaml:"data,omitempty"`
 	aggregateConfigData map[string]interface{}
-	logger              *log.Logger
+	logger              *zap.SugaredLogger
 	builtins.SecretGeneratorPlugin
 	SuperMapPluginBase
 }
@@ -27,17 +27,17 @@ func (p *SuperSecretPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error
 	p.StringData = make(map[string]string)
 	err = yaml.Unmarshal(c, p)
 	if err != nil {
-		p.logger.Printf("error unmarshalling yaml, error: %v\n", err)
+		p.logger.Errorf("error unmarshalling yaml, error: %v\n", err)
 		return err
 	}
 	p.aggregateConfigData, err = p.getAggregateConfigData()
 	if err != nil {
-		p.logger.Printf("error accumulating config data: %v\n", err)
+		p.logger.Errorf("error accumulating config data: %v\n", err)
 		return err
 	}
 	err = p.SuperMapPluginBase.SetupTransformerConfig(h.Loader())
 	if err != nil {
-		p.logger.Printf("error setting up transformer config, error: %v\n", err)
+		p.logger.Errorf("error setting up transformer config, error: %v\n", err)
 		return err
 	}
 	return p.SecretGeneratorPlugin.Config(h, c)
@@ -50,7 +50,7 @@ func (p *SuperSecretPlugin) getAggregateConfigData() (map[string]interface{}, er
 	}
 	for k, v := range p.Data {
 		if decodedValue, err := base64.StdEncoding.DecodeString(v); err != nil {
-			p.logger.Printf("error base64 decoding value: %v for key: %v, error: %v\n", v, k, err)
+			p.logger.Errorf("error base64 decoding value: %v for key: %v, error: %v\n", v, k, err)
 			aggregateConfigData[k] = ""
 		} else {
 			aggregateConfigData[k] = string(decodedValue)
@@ -70,7 +70,7 @@ func (p *SuperSecretPlugin) Transform(m resmap.ResMap) error {
 	return p.SuperMapPluginBase.Transform(m)
 }
 
-func (p *SuperSecretPlugin) GetLogger() *log.Logger {
+func (p *SuperSecretPlugin) GetLogger() *zap.SugaredLogger {
 	return p.logger
 }
 

@@ -3,7 +3,6 @@ package utils
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"go.uber.org/zap"
 )
 
 const (
@@ -42,17 +42,17 @@ func (mm *fileLockMutexMapT) getMutexForKey(key string) *sync.Mutex {
 	return mutexForKey
 }
 
-func LockPath(lockFilePath string, lockTimeoutSeconds, retryDelayMinMilliseconds, retryDelayMaxMilliseconds int, logger *log.Logger) (unlockFn func(), err error) {
+func LockPath(lockFilePath string, lockTimeoutSeconds, retryDelayMinMilliseconds, retryDelayMaxMilliseconds int, logger *zap.SugaredLogger) (unlockFn func(), err error) {
 	t1 := time.Now()
 	mu := fileLockMutexMap.getMutexForKey(lockFilePath)
 	mu.Lock()
 
 	defer func() {
-		logger.Printf("waited for file lock: %v for: %vs\n", lockFilePath, time.Now().Sub(t1).Seconds())
+		logger.Debugf("waited for file lock: %v for: %vs\n", lockFilePath, time.Now().Sub(t1).Seconds())
 	}()
 	if err := os.MkdirAll(filepath.Dir(lockFilePath), os.ModePerm); err != nil && !os.IsExist(err) {
 		mu.Unlock()
-		fmt.Sprintf("file lock failed for: %v, due to directory existance test, error: %v", lockFilePath, err)
+		logger.Errorf("file lock failed for: %v, due to directory existance test, error: %v", lockFilePath, err)
 		return nil, err
 	}
 	fileLock := flock.New(lockFilePath)
@@ -61,12 +61,12 @@ func LockPath(lockFilePath string, lockTimeoutSeconds, retryDelayMinMilliseconds
 	locked, err := tryLockContext(fileLock, lockCtx, retryDelayMinMilliseconds, retryDelayMaxMilliseconds)
 	if err != nil {
 		mu.Unlock()
-		fmt.Sprintf("file lock failed for: %v with error: %v", lockFilePath, err)
+		logger.Errorf("file lock failed for: %v with error: %v", lockFilePath, err)
 		return nil, err
 	} else if !locked {
 		mu.Unlock()
 		msg := fmt.Sprintf("file lock failed for: %v without an error", lockFilePath)
-		logger.Printf(msg)
+		logger.Errorf(msg)
 		return nil, fmt.Errorf(msg)
 	}
 
@@ -75,7 +75,7 @@ func LockPath(lockFilePath string, lockTimeoutSeconds, retryDelayMinMilliseconds
 		_ = fileLock.Unlock()
 		_ = os.Remove(lockFilePath)
 		mu.Unlock()
-		logger.Printf("releasing file lock: %v after: %vs\n", lockFilePath, time.Now().Sub(t2).Seconds())
+		logger.Debugf("releasing file lock: %v after: %vs\n", lockFilePath, time.Now().Sub(t2).Seconds())
 	}, nil
 }
 

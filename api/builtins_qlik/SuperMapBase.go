@@ -4,12 +4,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"sigs.k8s.io/kustomize/kyaml/filtersutil"
 	"sigs.k8s.io/kustomize/kyaml/kio"
 	kyaml "sigs.k8s.io/kustomize/kyaml/yaml"
 
+	"go.uber.org/zap"
 	"sigs.k8s.io/kustomize/api/ifc"
 	"sigs.k8s.io/kustomize/api/internal/accumulator"
 	"sigs.k8s.io/kustomize/api/internal/plugins/builtinconfig"
@@ -19,7 +19,7 @@ import (
 )
 
 type IDecorator interface {
-	GetLogger() *log.Logger
+	GetLogger() *zap.SugaredLogger
 	GetName() string
 	GetNamespace() string
 	SetNamespace(namespace string)
@@ -56,12 +56,12 @@ func (b *SuperMapPluginBase) SetupTransformerConfig(ldr ifc.Loader) error {
 	b.tConfig = &builtinconfig.TransformerConfig{}
 	tCustomConfig, err := builtinconfig.MakeTransformerConfig(ldr, b.Configurations)
 	if err != nil {
-		b.Decorator.GetLogger().Printf("error making transformer config, error: %v\n", err)
+		b.Decorator.GetLogger().Info("error making transformer config, error: %v\n", err)
 		return err
 	}
 	b.tConfig, err = b.tConfig.Merge(tCustomConfig)
 	if err != nil {
-		b.Decorator.GetLogger().Printf("error merging transformer config, error: %v\n", err)
+		b.Decorator.GetLogger().Info("error merging transformer config, error: %v\n", err)
 		return err
 	}
 	return nil
@@ -74,13 +74,13 @@ func (b *SuperMapPluginBase) Transform(m resmap.ResMap) error {
 	} else if b.AssumeTargetWillExist && !b.Decorator.GetDisableNameSuffixHash() {
 		return b.executeAssumeWillExistTransform(m)
 	} else {
-		b.Decorator.GetLogger().Printf("NOT executing anything because resource: %v is NOT in the input stream and AssumeTargetWillExist: %v, disableNameSuffixHash: %v\n", b.Decorator.GetName(), b.AssumeTargetWillExist, b.Decorator.GetDisableNameSuffixHash())
+		b.Decorator.GetLogger().Info("NOT executing anything because resource: %v is NOT in the input stream and AssumeTargetWillExist: %v, disableNameSuffixHash: %v\n", b.Decorator.GetName(), b.AssumeTargetWillExist, b.Decorator.GetDisableNameSuffixHash())
 	}
 	return nil
 }
 
 func (b *SuperMapPluginBase) executeAssumeWillExistTransform(m resmap.ResMap) error {
-	b.Decorator.GetLogger().Printf("executeAssumeWillExistTransform() for imaginary resource: %v\n", b.Decorator.GetName())
+	b.Decorator.GetLogger().Info("executeAssumeWillExistTransform() for imaginary resource: %v\n", b.Decorator.GetName())
 
 	if b.Decorator.GetNamespace() == "" {
 		if anyExistingResource := m.GetByIndex(0); anyExistingResource != nil && anyExistingResource.GetNamespace() != "" {
@@ -90,19 +90,19 @@ func (b *SuperMapPluginBase) executeAssumeWillExistTransform(m resmap.ResMap) er
 
 	generateResourceMap, err := b.Decorator.Generate()
 	if err != nil {
-		b.Decorator.GetLogger().Printf("error generating temp resource: %v, error: %v\n", b.Decorator.GetName(), err)
+		b.Decorator.GetLogger().Info("error generating temp resource: %v, error: %v\n", b.Decorator.GetName(), err)
 		return err
 	}
 	tempResource := b.find(b.Decorator.GetName(), b.Decorator.GetType(), generateResourceMap)
 	if tempResource == nil {
 		err := fmt.Errorf("error locating generated temp resource: %v", b.Decorator.GetName())
-		b.Decorator.GetLogger().Printf("%v\n", err)
+		b.Decorator.GetLogger().Info("%v\n", err)
 		return err
 	}
 
 	err = m.Append(tempResource)
 	if err != nil {
-		b.Decorator.GetLogger().Printf("error appending temp resource: %v to the resource map, error: %v\n", b.Decorator.GetName(), err)
+		b.Decorator.GetLogger().Info("error appending temp resource: %v to the resource map, error: %v\n", b.Decorator.GetName(), err)
 		return err
 	}
 
@@ -115,7 +115,7 @@ func (b *SuperMapPluginBase) executeAssumeWillExistTransform(m resmap.ResMap) er
 
 	nameWithHash, err := b.generateNameWithHash(tempResource)
 	if err != nil {
-		b.Decorator.GetLogger().Printf("error hashing resource: %v, error: %v\n", resourceName, err)
+		b.Decorator.GetLogger().Info("error hashing resource: %v, error: %v\n", resourceName, err)
 		return err
 	}
 	tempResource.StorePreviousId()
@@ -123,40 +123,40 @@ func (b *SuperMapPluginBase) executeAssumeWillExistTransform(m resmap.ResMap) er
 
 	err = b.executeNameReferencesTransformer(m)
 	if err != nil {
-		b.Decorator.GetLogger().Printf("error executing nameReferenceTransformer.Transform(): %v\n", err)
+		b.Decorator.GetLogger().Info("error executing nameReferenceTransformer.Transform(): %v\n", err)
 		return err
 	}
 	err = m.Remove(tempResource.CurId())
 	if err != nil {
-		b.Decorator.GetLogger().Printf("error removing temp resource: %v from the resource map, error: %v\n", b.Decorator.GetName(), err)
+		b.Decorator.GetLogger().Info("error removing temp resource: %v from the resource map, error: %v\n", b.Decorator.GetName(), err)
 		return err
 	}
 	return nil
 }
 
 func (b *SuperMapPluginBase) executeBasicTransform(resource *resource.Resource, m resmap.ResMap) error {
-	b.Decorator.GetLogger().Printf("executeBasicTransform() for resource: %v...\n", resource)
+	b.Decorator.GetLogger().Info("executeBasicTransform() for resource: %v...\n", resource)
 
 	if err := b.appendData(resource, b.Decorator.GetConfigData(), false); err != nil {
-		b.Decorator.GetLogger().Printf("error appending data to resource: %v, error: %v\n", b.Decorator.GetName(), err)
+		b.Decorator.GetLogger().Info("error appending data to resource: %v, error: %v\n", b.Decorator.GetName(), err)
 		return err
 	}
 
 	if !b.Decorator.GetDisableNameSuffixHash() {
 		if err := m.Remove(resource.CurId()); err != nil {
-			b.Decorator.GetLogger().Printf("error removing original resource on name change: %v\n", err)
+			b.Decorator.GetLogger().Info("error removing original resource on name change: %v\n", err)
 			return err
 		}
 		if rmap, err := resource.Map(); err != nil {
-			b.Decorator.GetLogger().Printf("error getting resource.Map(): %v\n", err)
+			b.Decorator.GetLogger().Info("error getting resource.Map(): %v\n", err)
 			return err
 		} else {
 			newResource := b.Rf.RF().FromMapAndOption(rmap, &types.GeneratorArgs{Behavior: "replace"})
 			if err := m.Append(newResource); err != nil {
-				b.Decorator.GetLogger().Printf("error re-adding resource on name change: %v\n", err)
+				b.Decorator.GetLogger().Info("error re-adding resource on name change: %v\n", err)
 				return err
 			}
-			b.Decorator.GetLogger().Printf("resource should have hashing enabled: %v\n", newResource)
+			b.Decorator.GetLogger().Info("resource should have hashing enabled: %v\n", newResource)
 		}
 	}
 	return nil

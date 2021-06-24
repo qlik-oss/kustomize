@@ -1,32 +1,64 @@
 package utils
 
 import (
-	"fmt"
 	"io"
-	"io/ioutil"
-	"log"
 	"os"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
-type nullWriter struct {
+type zapWriter struct {
+	sugar *zap.SugaredLogger
 }
 
-func (nw *nullWriter) Write(p []byte) (n int, err error) {
+func (zw *zapWriter) Write(p []byte) (n int, err error) {
+	zw.sugar.Info(string(p))
 	return len(p), nil
 }
 
-func GetLogger(pluginName string) *log.Logger {
-	var logWriter io.Writer
-	if os.Getenv("QKP_LOG_STDOUT_ENABLED") == "true" {
-		logWriter = os.Stdout
-	} else if os.Getenv("QKP_LOG_ENABLED") == "true" {
-		tmpFile, err := ioutil.TempFile(os.Getenv("QKP_LOG_DIR"), fmt.Sprintf("%v-*.log", pluginName))
-		if err != nil {
-			panic(fmt.Errorf("error initializing logging for plugin: %v, error: %v", pluginName, err))
-		}
-		logWriter = tmpFile
-	} else {
-		logWriter = &nullWriter{}
+func GetLogWriter(sugar *zap.SugaredLogger) io.Writer {
+	return &zapWriter{sugar}
+}
+
+func GetNopLogger() *zap.SugaredLogger {
+	sugar := zap.NewNop().Sugar()
+	defer sugar.Sync()
+	return sugar
+}
+
+func GetLogger(pluginName string) *zap.SugaredLogger {
+	var (
+		logger *zap.Logger
+		sugar  *zap.SugaredLogger
+		cfg    zap.Config
+		level  zapcore.Level
+	)
+	level = zap.ErrorLevel
+	value, exists := os.LookupEnv("QKP_LOG_STDERR_ENABLED")
+	if exists {
+		level.UnmarshalText([]byte(value))
 	}
-	return log.New(logWriter, "", log.LstdFlags|log.LUTC|log.Lmicroseconds|log.Lshortfile)
+	cfg = zap.Config{
+		Encoding:         "json",
+		Level:            zap.NewAtomicLevelAt(level),
+		OutputPaths:      []string{"stderr"},
+		ErrorOutputPaths: []string{"stderr"},
+		EncoderConfig: zapcore.EncoderConfig{
+			LevelKey:       "level",
+			NameKey:        "logger",
+			FunctionKey:    zapcore.OmitKey,
+			MessageKey:     "msg",
+			StacktraceKey:  "stacktrace",
+			LineEnding:     zapcore.DefaultLineEnding,
+			EncodeLevel:    zapcore.LowercaseLevelEncoder,
+			EncodeTime:     zapcore.EpochTimeEncoder,
+			EncodeDuration: zapcore.SecondsDurationEncoder,
+			EncodeCaller:   zapcore.ShortCallerEncoder,
+		},
+	}
+	logger, _ = cfg.Build()
+	sugar = logger.Sugar()
+	defer sugar.Sync()
+	return sugar
 }

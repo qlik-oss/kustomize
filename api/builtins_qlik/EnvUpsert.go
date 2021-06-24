@@ -3,8 +3,8 @@ package builtins_qlik
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 
+	"go.uber.org/zap"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/filters/fieldspec"
 	"sigs.k8s.io/kustomize/api/resmap"
@@ -27,7 +27,7 @@ type EnvUpsertPlugin struct {
 	Target    *types.Selector `json:"target,omitempty" yaml:"target,omitempty"`
 	Path      string          `json:"path,omitempty" yaml:"path,omitempty"`
 	EnvVars   []EnvVarType    `json:"env,omitempty" yaml:"env,omitempty"`
-	logger    *log.Logger
+	logger    *zap.SugaredLogger
 	fieldSpec types.FieldSpec
 }
 
@@ -38,7 +38,7 @@ func (p *EnvUpsertPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) 
 	p.EnvVars = make([]EnvVarType, 0)
 	err = yaml.Unmarshal(c, p)
 	if err != nil {
-		p.logger.Printf("error unmarshalling config from yaml, error: %v\n", err)
+		p.logger.Errorf("error unmarshalling config from yaml, error: %v\n", err)
 		return err
 	}
 	if p.Target == nil {
@@ -47,12 +47,12 @@ func (p *EnvUpsertPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) 
 	for _, envVar := range p.EnvVars {
 		if envVar.Name == nil {
 			err = fmt.Errorf("env var config has no name: %v", envVar)
-			p.logger.Printf("config error: %v\n", err)
+			p.logger.Errorf("config error: %v\n", err)
 			return err
 		}
 		if envVar.Value == nil && envVar.ValueFrom == nil && !envVar.Delete {
 			err = fmt.Errorf("env var config has no value or valueFrom: %v", envVar)
-			p.logger.Printf("config error: %v\n", err)
+			p.logger.Errorf("config error: %v\n", err)
 			return err
 		}
 	}
@@ -65,7 +65,7 @@ func (p *EnvUpsertPlugin) Transform(m resmap.ResMap) error {
 		resources, err := m.Select(*p.Target)
 
 		if err != nil {
-			p.logger.Printf("error selecting resources based on the target selector, error: %v\n", err)
+			p.logger.Errorf("error selecting resources based on the target selector, error: %v\n", err)
 			return err
 		}
 		for _, r := range resources {
@@ -74,7 +74,7 @@ func (p *EnvUpsertPlugin) Transform(m resmap.ResMap) error {
 				fieldSpec: p.fieldSpec,
 			}, r)
 			if err != nil {
-				p.logger.Printf("error upserting env vars: %+v, error: %v\n", p.EnvVars, err)
+				p.logger.Errorf("error upserting env vars: %+v, error: %v\n", p.EnvVars, err)
 				return err
 			}
 		}

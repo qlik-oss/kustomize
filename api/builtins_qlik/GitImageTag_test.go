@@ -145,7 +145,7 @@ func Test_ImageGitTag_getGitDescribeForHead(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			tag, err := utils.GetGitDescribeForHead(testCase.dir, "9.9.9")
+			tag, err := utils.GetGitDescribeForHead(testCase.dir, "9.9.9", nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v\n", err)
 			}

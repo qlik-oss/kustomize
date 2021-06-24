@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/filters/fieldspec"
 	kutils "sigs.k8s.io/kustomize/api/internal/utils"
@@ -37,7 +37,7 @@ type SearchReplacePlugin struct {
 	ReplaceWithObjRef         *types.Var                  `json:"replaceWithObjRef,omitempty" yaml:"replaceWithObjRef,omitempty"`
 	ReplaceWithGitDescribeTag *ReplaceWithGitDescribeTagT `json:"replaceWithGitDescribeTag,omitempty" yaml:"replaceWithGitDescribeTag,omitempty"`
 	ReplaceType               string                      `json:"replaceType,omitempty" yaml:"replaceType,omitempty"`
-	logger                    *log.Logger
+	logger                    *zap.SugaredLogger
 	fieldSpec                 types.FieldSpec
 	re                        *regexp.Regexp
 	pwd                       string
@@ -56,7 +56,7 @@ func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err err
 	p.ReplaceWithGitDescribeTag = nil
 	err = yaml.Unmarshal(c, p)
 	if err != nil {
-		p.logger.Printf("error unmarshalling config from yaml, error: %v\n", err)
+		p.logger.Errorf("error unmarshalling config from yaml, error: %v\n", err)
 		return err
 	}
 	if p.Target == nil {
@@ -67,7 +67,7 @@ func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err err
 
 	p.re, err = regexp.Compile(p.Search)
 	if err != nil {
-		p.logger.Printf("error compiling regexp from: %v, error: %v\n", p.Search, err)
+		p.logger.Errorf("error compiling regexp from: %v, error: %v\n", p.Search, err)
 		return err
 	}
 
@@ -79,7 +79,7 @@ func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err err
 func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 	resources, err := m.Select(*p.Target)
 	if err != nil {
-		p.logger.Printf("error selecting resources based on the target selector, error: %v\n", err)
+		p.logger.Errorf("error selecting resources based on the target selector, error: %v\n", err)
 		return err
 	}
 	if p.Replace != "" {
@@ -93,7 +93,7 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 		case string:
 			p.replaceStr = newValue
 		default:
-			return errors.New("Replacement input value of unknown type")
+			return errors.New("replacement input value of unknown type")
 		}
 	}
 	if p.replaceStr == "" {
@@ -102,7 +102,7 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 			for _, res := range m.Resources() {
 				if p.matchesObjRef(res) {
 					if replacementValue, replace, err := getReplacementValue(res, p.ReplaceWithObjRef.FieldRef.FieldPath); err != nil {
-						p.logger.Printf("error getting replacement value: %v\n", err)
+						p.logger.Debugf("error getting replacement value: %v\n", err)
 					} else {
 						p.replaceStr = replacementValue
 						p.Replace = replace
@@ -112,11 +112,11 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 				}
 			}
 			if p.replaceStr == "" && !replaceEmpty {
-				p.logger.Printf("Object Reference could not be found")
+				p.logger.Debugf("Object Reference could not be found")
 				return nil
 			}
 		} else if p.ReplaceWithGitDescribeTag != nil {
-			if gitDescribeTag, err := utils.GetGitDescribeForHead(p.pwd, p.ReplaceWithGitDescribeTag.Default); err != nil {
+			if gitDescribeTag, err := utils.GetGitDescribeForHead(p.pwd, p.ReplaceWithGitDescribeTag.Default, p.logger); err != nil {
 				return err
 			} else {
 				p.replaceStr = strings.TrimPrefix(gitDescribeTag, "v")
@@ -130,10 +130,10 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 	for _, r := range resources {
 		if p.fieldSpec.Path == "/" {
 			if rmap, err := r.Map(); err != nil {
-				p.logger.Printf("error reseource.Map(), error: %v\n", err)
+				p.logger.Infof("error reseource.Map(), error: %v\n", err)
 				return err
 			} else if newRoot, err := p.searchAndReplace(rmap, false); err != nil {
-				p.logger.Printf("error executing transformers.MutateField(), error: %v\n", err)
+				p.logger.Infof("error executing transformers.MutateField(), error: %v\n", err)
 				return err
 			} else if newRootMap, newRootIsMap := newRoot.(map[string]interface{}); !newRootIsMap {
 				return errors.New("search/replace on root did not return a map[string]interface{}")
@@ -288,12 +288,12 @@ func (p *SearchReplacePlugin) searchAndReplace(in interface{}, base64Encoded boo
 
 func (p *SearchReplacePlugin) marshallToJsonAndReplace(in interface{}) (interface{}, error) {
 	if marshalledTarget, err := json.Marshal(in); err != nil {
-		p.logger.Printf("error marshalling interface to JSON, error: %v\n", err)
+		p.logger.Infof("error marshalling interface to JSON, error: %v\n", err)
 		return nil, err
 	} else {
 		replaced := p.re.ReplaceAllString(string(marshalledTarget), p.replaceStr)
 		if err := json.Unmarshal([]byte(replaced), &in); err != nil {
-			p.logger.Printf("error unmarshalling JSON string after replacements back to interface, error: %v\n", err)
+			p.logger.Infof("error unmarshalling JSON string after replacements back to interface, error: %v\n", err)
 			return nil, err
 		} else {
 			return in, err

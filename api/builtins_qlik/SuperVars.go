@@ -1,8 +1,6 @@
 package builtins_qlik
 
 import (
-	"log"
-
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 
 	"sigs.k8s.io/kustomize/api/internal/accumulator"
@@ -10,13 +8,14 @@ import (
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/types"
 	"sigs.k8s.io/yaml"
+	"go.uber.org/zap"
 )
 
 type SuperVarsPlugin struct {
 	Vars           []types.Var `json:"vars,omitempty" yaml:"vars,omitempty"`
 	Configurations []string    `json:"configurations,omitempty" yaml:"configurations,omitempty"`
 	tConfig        *builtinconfig.TransformerConfig
-	logger         *log.Logger
+	logger         *zap.SugaredLogger
 }
 
 func (p *SuperVarsPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
@@ -25,14 +24,14 @@ func (p *SuperVarsPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) 
 
 	err = yaml.Unmarshal(c, p)
 	if err != nil {
-		p.logger.Printf("error unmarshelling plugin config yaml, error: %v\n", err)
+		p.logger.Errorf("error unmarshelling plugin config yaml, error: %v\n", err)
 		return err
 	}
 
 	p.tConfig = &builtinconfig.TransformerConfig{}
 	p.tConfig, err = builtinconfig.MakeTransformerConfig(h.Loader(), p.Configurations)
 	if err != nil {
-		p.logger.Printf("error making transformer config, error: %v\n", err)
+		p.logger.Errorf("error making transformer config, error: %v\n", err)
 		return err
 	}
 

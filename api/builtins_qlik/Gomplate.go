@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 
+	"go.uber.org/zap"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/ifc"
 	"sigs.k8s.io/kustomize/api/resmap"
@@ -18,7 +18,7 @@ type GomplatePlugin struct {
 	Pwd        string
 	ldr        ifc.Loader
 	rf         *resmap.Factory
-	logger     *log.Logger
+	logger     *zap.SugaredLogger
 }
 
 func (p *GomplatePlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
@@ -39,25 +39,25 @@ func (p *GomplatePlugin) Transform(m resmap.ResMap) error {
 		if _, err := os.Stat(vaultAddressPath); os.IsNotExist(err) {
 			readBytes, err := ioutil.ReadFile(vaultAddressPath)
 			if err != nil {
-				p.logger.Printf("error reading vault address file: %v, error: %v\n", vaultAddressPath, err)
+				p.logger.Errorf("error reading vault address file: %v, error: %v\n", vaultAddressPath, err)
 				return err
 			}
 			vaultAddress = fmt.Sprintf("VAULT_ADDR=%s", string(readBytes))
 			env = append(env, vaultAddress)
 		} else if err != nil {
-			p.logger.Printf("error executing stat on vault address file: %v, error: %v\n", vaultAddressPath, err)
+			p.logger.Errorf("error executing stat on vault address file: %v, error: %v\n", vaultAddressPath, err)
 		}
 
 		if _, err := os.Stat(vaultTokenPath); os.IsNotExist(err) {
 			readBytes, err := ioutil.ReadFile(vaultTokenPath)
 			if err != nil {
-				p.logger.Printf("error reading vault token file: %v, error: %v\n", vaultTokenPath, err)
+				p.logger.Errorf("error reading vault token file: %v, error: %v\n", vaultTokenPath, err)
 				return err
 			}
 			vaultToken = fmt.Sprintf("VAULT_TOKEN=%s", string(readBytes))
 			env = append(env, vaultToken)
 		} else if err != nil {
-			p.logger.Printf("error executing stat on vault token file: %v, error: %v\n", vaultTokenPath, err)
+			p.logger.Errorf("error executing stat on vault token file: %v, error: %v\n", vaultTokenPath, err)
 		}
 	}
 
@@ -66,14 +66,14 @@ func (p *GomplatePlugin) Transform(m resmap.ResMap) error {
 		if _, isSet := p.DataSource["ejson"].(map[string]interface{})["privateKeyPath"]; isSet {
 			if ejsonPrivateKeyPath, ok := p.DataSource["ejson"].(map[string]interface{})["privateKeyPath"].(string); !ok {
 				err := errors.New("privateKeyPath must be a string")
-				p.logger.Printf("error: %v\n", err)
+				p.logger.Errorf("error: %v\n", err)
 				return err
 			} else if _, err := os.Stat(ejsonPrivateKeyPath); err != nil {
-				p.logger.Printf("error executing stat on ejson private key file: %v, error: %v\n", ejsonPrivateKeyPath, err)
+				p.logger.Errorf("error executing stat on ejson private key file: %v, error: %v\n", ejsonPrivateKeyPath, err)
 			} else {
 				readBytes, err := ioutil.ReadFile(ejsonPrivateKeyPath)
 				if err != nil {
-					p.logger.Printf("error reading ejson private key file: %v, error: %v\n", ejsonPrivateKeyPath, err)
+					p.logger.Errorf("error reading ejson private key file: %v, error: %v\n", ejsonPrivateKeyPath, err)
 					return err
 				}
 				ejsonKey = fmt.Sprintf("EJSON_KEY=%s", string(readBytes))
@@ -100,16 +100,16 @@ func (p *GomplatePlugin) Transform(m resmap.ResMap) error {
 	for _, r := range m.Resources() {
 		yamlByte, err := r.AsYAML()
 		if err != nil {
-			p.logger.Printf("error getting resource as yaml: %v, error: %v\n", r.GetName(), err)
+			p.logger.Errorf("error getting resource as yaml: %v, error: %v\n", r.GetName(), err)
 			return err
 		}
 
 		if output, err := utils.RunGomplate(dataSource, p.Pwd, env, string(yamlByte), p.logger); err != nil {
-			p.logger.Printf("error executing runGomplate() on dataSource: %v, in directory: %v, error: %v\n", dataSource, p.Pwd, err)
+			p.logger.Errorf("error executing runGomplate() on dataSource: %v, in directory: %v, error: %v\n", dataSource, p.Pwd, err)
 		} else {
 			res, err := p.rf.RF().FromBytes(output)
 			if err != nil {
-				p.logger.Printf("error unmarshalling resource from bytes: %v\n", err)
+				p.logger.Errorf("error unmarshalling resource from bytes: %v\n", err)
 				return err
 			}
 			if jsonBytes, err := res.MarshalJSON(); err != nil {
