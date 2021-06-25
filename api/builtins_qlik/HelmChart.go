@@ -248,10 +248,36 @@ func (p *HelmChartPlugin) helmFetchIfRequired(settings *cli.EnvSettings) error {
 	}
 
 	chartDir := filepath.Join(p.ChartHome, p.ChartName)
-	if exists, err := p.directoryExists(chartDir); err != nil {
+	var exists bool
+	var err error
+	if exists, err = p.directoryExists(chartDir); err != nil {
 		p.logger.Errorf("error checking if chart was already fetched to path: %v, err: %v\n", chartDir, err)
 		return err
-	} else if !exists {
+	}
+	if exists {
+		if len(p.ChartVersion) > 0 {
+			chartFile := filepath.Join(p.ChartHome, p.ChartName, "Chart.yaml")
+			if _, err = os.Stat(chartFile); err == nil {
+				if chartBytes, err := ioutil.ReadFile(chartFile); err == nil {
+					var chartYaml map[string]interface{}
+					if err = yaml.Unmarshal(chartBytes, &chartYaml); err == nil {
+						prevVersion := chartYaml["version"].(string)
+						if prevVersion != p.ChartVersion {
+							exists = false
+						}
+					} else {
+						exists = false
+					}
+				} else {
+					exists = false
+				}
+			} else {
+				exists = false
+			}
+		}
+	}
+	if !exists {
+		os.RemoveAll(chartDir)
 		if !strings.HasPrefix(p.ChartRepo, "oci") {
 			if repoName, err := p.helmConfigForChart(settings, p.ChartRepoName); err != nil {
 				return err
