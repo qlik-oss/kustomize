@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -20,6 +19,7 @@ import (
 	version "github.com/hashicorp/go-version"
 	"github.com/traefik/yaegi/interp"
 	"github.com/traefik/yaegi/stdlib"
+	"go.uber.org/zap"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/yaegi/yamlv3"
 	"sigs.k8s.io/kustomize/api/filesys"
@@ -80,7 +80,7 @@ type GoGetterPlugin struct {
 	Pwd                string               `hash:"-"`
 	ldr                ifc.Loader           `hash:"-"`
 	rf                 *resmap.Factory      `hash:"-"`
-	logger             *log.Logger          `hash:"-"`
+	logger             *zap.SugaredLogger   `hash:"-"`
 	executableResolver iExecutableResolverT `hash:"-"`
 	yamlBytes          []byte               `hash:"-"`
 }
@@ -106,7 +106,7 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 	dir, err := konfig.DefaultAbsPluginHome(filesys.MakeFsOnDisk())
 	if err != nil {
 		dir = filepath.Join(konfig.HomeDir(), konfig.XdgConfigHomeEnvDefault, konfig.ProgramName, konfig.RelPluginHome)
-		p.logger.Printf("No kustomize plugin directory, will create default: %v\n", dir)
+		p.logger.Infof("No kustomize plugin directory, will create default: %v", dir)
 	}
 
 	repodir := filepath.Join(dir, "qlik", "v1", "repos")
@@ -117,14 +117,17 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 	var cacheFileName string
 
 	runIDVar := strconv.Itoa(os.Getppid()) + "_KUZ_RUN_ID"
+	p.logger.Debugf("Cache Identifier: %v", runIDVar)
 	runID := os.Getenv(runIDVar)
 
 	// I'm the parent
 	if len(runID) == 0 {
 		runID = strconv.Itoa(os.Getpid())
+		p.logger.Debugf("Cache Identifier not set, using pid: %v", runID)
+	} else {
+		p.logger.Debugf("Cache Identifier set, using: %v", runID)
 	}
 	cacheDirName := filepath.Join(dir, ".kuz_"+runID)
-
 	// Clean up and old .kuz_*
 	files, _ := filepath.Glob(filepath.Join(dir, ".kuz_*"))
 	for _, f := range files {
@@ -134,8 +137,10 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 	}
 
 	cacheFileName = filepath.Join(cacheDirName, fmt.Sprintf("%x", structhash.Md5(p, 1)))
+	p.logger.Debugf("Using Cache file name: %v", cacheFileName)
 	_, err = os.Stat(cacheDirName)
 	if err == nil {
+		p.logger.Infof("Cache Exists, NOT pulling from git")
 		nogit = true
 		_, err = os.Stat(cacheFileName)
 		if err == nil {
@@ -144,20 +149,21 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 	}
 	// Same repo in the same run, used cached
 	if err := os.MkdirAll(repodir, 0777); err != nil {
-		p.logger.Printf("error creating directory: %v, error: %v\n", dir, err)
+		p.logger.Errorf("error creating directory: %v, error: %v", dir, err)
 		return nil, err
 	}
 	// We usually only fetch a branch at a time
+	p.logger.Infof("Using git reference: %v", p.URL)
 	url, err := url.Parse(p.URL)
 	if err != nil {
-		p.logger.Printf("Bad git URL %v\n", err)
+		p.logger.Errorf("Bad git URL %v\n", err)
 		return nil, err
 	}
 	url.Scheme = "https"
 
 	if !nogit {
 		if err := p.executeGitGetter(url, dir); err != nil {
-			p.logger.Printf("Error fetching repository: %v\n", err)
+			p.logger.Errorf("Error fetching repository: %v\n", err)
 			return nil, err
 		}
 		os.MkdirAll(cacheDirName, 0777)
@@ -165,7 +171,7 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 	if kustBytes == nil {
 		currentExe, err := p.executableResolver.Executable()
 		if err != nil {
-			p.logger.Printf("Unable to get kustomize executable: %v\n", err)
+			p.logger.Errorf("Unable to get kustomize executable: %v\n", err)
 			return nil, err
 		}
 
@@ -179,7 +185,7 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 		err = os.Chdir(cwd)
 		defer os.Chdir(oswd)
 		if err != nil {
-			p.logger.Printf("Error: Unable to set working dir %v: %v\n", cwd, err)
+			p.logger.Errorf("Error: Unable to set working dir %v: %v\n", cwd, err)
 			return nil, err
 		}
 
@@ -209,34 +215,36 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 				var gocode []byte
 				gocode, err = ioutil.ReadFile(p.PreBuildScriptFile)
 				if err != nil {
-					p.logger.Printf("Error loading go file: %v\n", err)
+					p.logger.Errorf("Error loading go file: %v\n", err)
 					return nil, err
 				}
 				_, err = i.Eval(string(gocode))
 			}
 			if err != nil {
-				p.logger.Printf("Go Script Error: %v\n", err)
+				p.logger.Errorf("Go Script Error: %v\n", err)
 				return nil, err
 			}
 			v, err := i.Eval("kust.PreBuild")
 			if err != nil {
-				p.logger.Printf("Go Script Error: %v\n", err)
+				p.logger.Errorf("Go Script Error: %v\n", err)
 				return nil, err
 			}
 			preBuild := v.Interface().(func([]string) error)
 			err = preBuild(p.PreBuildArgs)
 			if err != nil {
-				p.logger.Printf("Error from pre-Build: %v\n", err)
+				p.logger.Errorf("Error from pre-Build: %v\n", err)
 				return nil, err
 			}
 		}
 		var kustomizedYaml bytes.Buffer
 		cmd := exec.Command(currentExe, "build", ".")
 		cmd.Env = os.Environ()
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%d_KUZ_RUN_ID=%s", os.Getpid(), runID))
+		envVar := fmt.Sprintf("%d_KUZ_RUN_ID=%s", os.Getpid(), runID)
+		p.logger.Debugf("Setting Cache Var for kustomize run: %v\n", envVar)
+		cmd.Env = append(cmd.Env, envVar)
 		err = p.getRunCommand(cmd, &kustomizedYaml)
 		if err != nil {
-			p.logger.Printf("Error executing kustomize as a child process: %v\n", err)
+			p.logger.Errorf("Error executing kustomize as a child process: %v\n", err)
 			return nil, err
 		}
 		kustBytes = kustomizedYaml.Bytes()
@@ -263,7 +271,7 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 		i.Use(gogetter)
 
 		if err != nil {
-			p.logger.Printf("Go Script Error: %v\n", err)
+			p.logger.Errorf("Go Script Error: %v\n", err)
 			return nil, err
 		}
 		if len(p.PostBuildScript) > 0 {
@@ -272,24 +280,24 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 			var gocode []byte
 			gocode, err = ioutil.ReadFile(p.PostBuildScriptFile)
 			if err != nil {
-				p.logger.Printf("Error loading go file: %v\n", err)
+				p.logger.Errorf("Error loading go file: %v\n", err)
 				return nil, err
 			}
 			_, err = i.Eval(string(gocode))
 		}
 		if err != nil {
-			p.logger.Printf("Go Script Error: %v\n", err)
+			p.logger.Errorf("Go Script Error: %v\n", err)
 			return nil, err
 		}
 		v, err := i.Eval("kust.PostBuild")
 		if err != nil {
-			p.logger.Printf("Go Script Error: %v\n", err)
+			p.logger.Errorf("Go Script Error: %v\n", err)
 			return nil, err
 		}
 		postBuild := v.Interface().(func([]string) (*string, error))
 		postBuildRet, err := postBuild(p.PostBuildArgs)
 		if err != nil {
-			p.logger.Printf("Error from post-Build: %v\n", err)
+			p.logger.Errorf("Error from post-Build: %v\n", err)
 			return nil, err
 		}
 		if postBuildRet != nil {
@@ -322,8 +330,10 @@ func (p *GoGetterPlugin) GoGit(u *url.URL, dir string) error {
 		return err
 	}
 	if err == nil {
+		p.logger.Infof("%s has been previously cloned, checking for update using ref %s", dir, ref)
 		err = p.update(dir, u, ref)
 	} else {
+		p.logger.Infof("Cloning %s using ref %s", dir, ref)
 		err = p.clone(dir, u, ref)
 	}
 	if err != nil {
@@ -347,11 +357,12 @@ func (p *GoGetterPlugin) findDefaultBranch(dst string) string {
 func (p *GoGetterPlugin) executeGitGetter(url *url.URL, dir string) error {
 
 	if _, err := exec.LookPath("git"); err != nil {
-		return fmt.Errorf("git must be available and on the PATH")
+		p.logger.Error("git must be available and on the PATH")
+		return err
 	}
 
 	if err := p.GoGit(url, dir); err != nil {
-		p.logger.Printf("Error executing go-getter: %v\n", err)
+		p.logger.Errorf("Error executing go-getter: %v\n", err)
 		return err
 	}
 
@@ -369,8 +380,10 @@ func (p *GoGetterPlugin) getRunCommand(cmd *exec.Cmd, stdOut *bytes.Buffer) erro
 
 	err := cmd.Run()
 	if err == nil {
+		os.Stderr.Write(buf.Bytes())
 		return nil
 	}
+
 	if exiterr, ok := err.(*exec.ExitError); ok {
 		// The program has exited with an exit code != 0
 		if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
@@ -413,34 +426,36 @@ func (p *GoGetterPlugin) clone(dst string, u *url.URL, ref string) error {
 	if len(ref) != 0 {
 		if err := p.getRunCommand(exec.Command("git", "ls-remote", "--exit-code", "--heads", u.String(), ref), nil); err == nil {
 			args = append(args, "--branch", ref)
+			p.logger.Infof("git ref %v is a branch", ref)
 			isBranch = true
 		}
 	}
 	args = append(args, u.String(), filepath.Join(dst, ".git"))
 
 	if err := p.getRunCommand(exec.Command("git", args...), nil); err != nil {
-		p.logger.Printf("error executing git clone: %v\n", err)
+		p.logger.Errorf("error executing git clone: %v\n", err)
 		return err
 	}
 
 	cmd := exec.Command("git", "config", "--local", "--bool", "core.bare", "false")
 	cmd.Dir = dst
 	if err := p.getRunCommand(cmd, nil); err != nil {
-		p.logger.Printf("error executing git config: %v\n", err)
+		p.logger.Errorf("error executing git config: %v\n", err)
 		return err
 	}
 	if p.PartialCloneDir != "." {
+		p.logger.Infof("Performing partial clone of %v , subdirectory %v", u.String(), p.PartialCloneDir)
 		cmd = exec.Command("git", "sparse-checkout", "init", "--cone")
 		cmd.Dir = dst
 		if err := p.getRunCommand(cmd, nil); err != nil {
-			p.logger.Printf("error executing git sparse-checkout init: %v\n", err)
+			p.logger.Errorf("error executing git sparse-checkout init: %v\n", err)
 			return err
 		}
 		// hard code for now
 		cmd = exec.Command("git", "sparse-checkout", "set", p.PartialCloneDir)
 		cmd.Dir = dst
 		if err := p.getRunCommand(cmd, nil); err != nil {
-			p.logger.Printf("error executing git space-checkout set: %v\n", err)
+			p.logger.Errorf("error executing git space-checkout set: %v\n", err)
 			return err
 		}
 	}
@@ -451,7 +466,7 @@ func (p *GoGetterPlugin) clone(dst string, u *url.URL, ref string) error {
 	}
 	cmd.Dir = dst
 	if err := p.getRunCommand(cmd, nil); err != nil {
-		p.logger.Printf("git checkout: %v\n", err)
+		p.logger.Errorf("Error during checkout: %v\n", err)
 		return err
 	}
 	return nil
@@ -473,26 +488,28 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 		cmd.Dir = dst
 		stdoutbuf.Reset()
 		if p.getRunCommand(cmd, &stdoutbuf) == nil {
-			// This is a tag
+			p.logger.Infof("git ref %v is a tag", ref)
 			if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
 				clone = false
 				// For Sake of performance let's assume tags are immutable
 				update = false
 			}
 		} else {
-			// A Commit ID
+			p.logger.Infof("git ref %v is a commit id", ref)
 			cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
 			cmd.Dir = dst
 			stdoutbuf.Reset()
 			if p.getRunCommand(cmd, &stdoutbuf) == nil {
-				if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
+				curcommitId := stdoutbuf.String()
+				p.logger.Infof("HEAD local commit id is %s", ref)
+				if strings.TrimSuffix(curcommitId, "\n") == ref {
 					clone = false
 					update = false
 				}
 			}
 		}
 	} else {
-		// This is a branch
+		p.logger.Infof("git ref %v is a branch", ref)
 		if strings.TrimSuffix(stdoutbuf.String(), "\n") == ref {
 			clone = false
 			// Check if we need to pull
@@ -501,12 +518,14 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 			stdoutbuf.Reset()
 			if p.getRunCommand(cmd, &stdoutbuf) == nil {
 				localRef := strings.TrimSuffix(stdoutbuf.String(), "\n")
+				p.logger.Infof("HEAD local commit id on %v is %v", ref, localRef)
 				cmd = exec.Command("git", "ls-remote", "--exit-code", "--heads", u.String(), ref)
 				cmd.Dir = dst
 				stdoutbuf.Reset()
 				if p.getRunCommand(cmd, &stdoutbuf) == nil {
 					remoteref := strings.Fields(stdoutbuf.String())
 					if len(remoteref) > 0 {
+						p.logger.Infof("HEAD remote commit id on %v is %v", ref, remoteref[0])
 						if remoteref[0] == localRef {
 							update = false
 						}
@@ -516,18 +535,23 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 		}
 	}
 	if clone {
-		// reclone
+		p.logger.Infof("Recloning %v", u.String())
 		os.RemoveAll(dst)
 		return p.clone(dst, u, ref)
 	}
 	if update {
+		p.logger.Infof("Updating %v", u.String())
 		cmd = exec.Command("git", "pull", "--ff-only", "--tags", "origin", ref)
 		cmd.Dir = dst
 		if p.getRunCommand(cmd, nil) != nil {
 			// reclone
+			p.logger.Warnf("Update failed, recloning %v", u.String())
 			os.RemoveAll(dst)
 			return p.clone(dst, u, ref)
 		}
+	}
+	if !update && !clone {
+		p.logger.Infof("No clone nor update required for %v", u.String())
 	}
 	return nil
 }
@@ -545,7 +569,7 @@ func (p *GoGetterPlugin) checkGitVersion(min string) error {
 
 	fields := strings.Fields(string(out))
 	if len(fields) < 3 {
-		return fmt.Errorf("Unexpected 'git version' output: %q", string(out))
+		return fmt.Errorf("unexpected 'git version' output: %q", string(out))
 	}
 	v := fields[2]
 	if runtime.GOOS == "windows" && strings.Contains(v, ".windows.") {
@@ -558,7 +582,7 @@ func (p *GoGetterPlugin) checkGitVersion(min string) error {
 	}
 
 	if have.LessThan(want) {
-		return fmt.Errorf("Required git version = %s, have %s", want, have)
+		return fmt.Errorf("required git version = %s, have %s", want, have)
 	}
 
 	return nil

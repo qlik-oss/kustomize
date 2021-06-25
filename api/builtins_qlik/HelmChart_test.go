@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/provenance"
@@ -363,7 +364,10 @@ spec:
   restartPolicy: Always
 `
 
-	logger := log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds|log.Lshortfile)
+	baseLogger, _ := zap.NewDevelopment()
+	logger := baseLogger.Sugar()
+	defer logger.Sync()
+
 	p := provider.NewDefaultDepProvider()
 	resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig())
@@ -518,7 +522,9 @@ spec:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	logger := log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds|log.Lshortfile)
+	baseLogger, _ := zap.NewDevelopment()
+	logger := baseLogger.Sugar()
+	defer logger.Sync()
 	p := provider.NewDefaultDepProvider()
 	resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig())
@@ -656,7 +662,9 @@ spec:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	logger := log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds|log.Lshortfile)
+	baseLogger, _ := zap.NewDevelopment()
+	logger := baseLogger.Sugar()
+	defer logger.Sync()
 	p := provider.NewDefaultDepProvider()
 	resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig())
@@ -1010,7 +1018,10 @@ repositories:
 			assert.NoError(t, err)
 			settings := &cli.EnvSettings{RepositoryConfig: repoFilePath}
 
-			plugin := &HelmChartPlugin{logger: log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds|log.Lshortfile)}
+			baseLogger, _ := zap.NewDevelopment()
+			logger := baseLogger.Sugar()
+			defer logger.Sync()
+			plugin := &HelmChartPlugin{logger: logger}
 			helmRepoAddError := plugin.helmRepoAdd(settings, testCase.repoAddEntry)
 
 			resultRepoFileContent, err := ioutil.ReadFile(repoFilePath)
@@ -1022,7 +1033,9 @@ repositories:
 }
 
 func Test_IncludeCRDs_defaults(t *testing.T) {
-	logger := log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds|log.Lshortfile)
+	baseLogger, _ := zap.NewDevelopment()
+	logger := baseLogger.Sugar()
+	defer logger.Sync()
 	p := provider.NewDefaultDepProvider()
 	resourceFactory := resmap.NewFactory(p.GetResourceFactory())
 	pluginHelpers := resmap.NewPluginHelpers(loader.NewFileLoaderAtRoot(filesys.MakeFsInMemory()), valtest_test.MakeFakeValidator(), resourceFactory, types.DisabledPluginConfig())

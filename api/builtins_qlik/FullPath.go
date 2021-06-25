@@ -1,9 +1,9 @@
 package builtins_qlik
 
 import (
-	"log"
 	"path/filepath"
 
+	"go.uber.org/zap"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/filters/fsslice"
 	"sigs.k8s.io/kustomize/api/resmap"
@@ -17,7 +17,7 @@ import (
 type FullPathPlugin struct {
 	RootDir    string
 	FieldSpecs []types.FieldSpec `json:"fieldSpecs,omitempty" yaml:"fieldSpecs,omitempty"`
-	logger     *log.Logger
+	logger     *zap.SugaredLogger
 }
 
 func (p *FullPathPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
@@ -40,7 +40,7 @@ func (p *FullPathPlugin) Transform(m resmap.ResMap) error {
 				fsSlice: p.FieldSpecs,
 			}, r)
 			if err != nil {
-				p.logger.Printf("error updating path for root dir: %v, error: %v\n", p.RootDir, err)
+				p.logger.Errorf("error updating path for root dir: %v, error: %v\n", p.RootDir, err)
 				return err
 			}
 		}

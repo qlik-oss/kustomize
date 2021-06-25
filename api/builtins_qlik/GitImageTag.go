@@ -1,13 +1,12 @@
 package builtins_qlik
 
 import (
-	"log"
-
 	"sigs.k8s.io/kustomize/api/builtins"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/types"
 	"sigs.k8s.io/yaml"
+	"go.uber.org/zap"
 )
 
 type GitImageTagPluginImage struct {
@@ -17,7 +16,7 @@ type GitImageTagPluginImage struct {
 type GitImageTagPlugin struct {
 	Images []GitImageTagPluginImage `json:"images,omitempty" yaml:"images,omitempty"`
 	pwd    string
-	logger *log.Logger
+	logger *zap.SugaredLogger
 }
 
 func (p *GitImageTagPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
@@ -27,7 +26,7 @@ func (p *GitImageTagPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error
 }
 
 func (p *GitImageTagPlugin) Transform(m resmap.ResMap) error {
-	if gitVersionTag, err := utils.GetGitDescribeForHead(p.pwd, ""); err != nil {
+	if gitVersionTag, err := utils.GetGitDescribeForHead(p.pwd, "", p.logger); err != nil {
 		return err
 	} else {
 		for _, image := range p.Images {

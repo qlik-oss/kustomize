@@ -2,7 +2,6 @@ package builtins_qlik
 
 import (
 	"io/ioutil"
-	"log"
 	"reflect"
 
 	"github.com/traefik/yaegi/interp"
@@ -13,6 +12,7 @@ import (
 	"sigs.k8s.io/kustomize/api/resource"
 	"sigs.k8s.io/kustomize/api/types"
 	"sigs.k8s.io/yaml"
+	"go.uber.org/zap"
 )
 
 // YaegiPlugin ...
@@ -22,7 +22,7 @@ type YaegiPlugin struct {
 	BuildScript      string   `json:"buildScript,omitempty" yaml:"buildScript,omitempty"`
 	BuildScriptFile  string   `json:"buildScriptFile,omitempty" yaml:"buildScriptFile,omitempty"`
 	rf               *resmap.Factory
-	logger           *log.Logger
+	logger           *zap.SugaredLogger
 	yamlBytes        []byte
 }
 
@@ -40,7 +40,7 @@ func (p *YaegiPlugin) Transform(m resmap.ResMap) error {
 	for _, r := range resources {
 		yamlByte, err := r.AsYAML()
 		if err != nil {
-			p.logger.Printf("Go Yaml Error: %v\n", err)
+			p.logger.Errorf("Go Yaml Error: %v\n", err)
 			return err
 		}
 		byteArray = append(byteArray, yamlByte)
@@ -69,25 +69,25 @@ func (p *YaegiPlugin) Transform(m resmap.ResMap) error {
 		var gocode []byte
 		gocode, err = ioutil.ReadFile(p.BuildScriptFile)
 		if err != nil {
-			p.logger.Printf("Error loading go file: %v\n", err)
+			p.logger.Errorf("Error loading go file: %v\n", err)
 			return err
 		}
 		_, err = i.Eval(string(gocode))
 	}
 	if err != nil {
-		p.logger.Printf("Go Script Error: %v\n", err)
+		p.logger.Errorf("Go Script Error: %v\n", err)
 		return err
 	}
 	v, err := i.Eval("kust.Transform")
 
 	if err != nil {
-		p.logger.Printf("Go Script Error: %v\n", err)
+		p.logger.Errorf("Go Script Error: %v\n", err)
 		return err
 	}
 	transform := v.Interface().(func([]string) (*[][]byte, error))
 	transformRet, err := transform(p.BuildArgs)
 	if err != nil {
-		p.logger.Printf("Error from post-Build: %v\n", err)
+		p.logger.Errorf("Error from post-Build: %v\n", err)
 		return err
 	}
 	if transformRet != nil {
@@ -95,7 +95,7 @@ func (p *YaegiPlugin) Transform(m resmap.ResMap) error {
 		for _, r := range kustBytes {
 			res, err := p.rf.RF().FromBytes(r)
 			if err != nil {
-				p.logger.Printf("error unmarshalling resource from bytes: %v\n", err)
+				p.logger.Errorf("error unmarshalling resource from bytes: %v\n", err)
 				return err
 			}
 			origres, _ := m.GetById(res.CurId())
@@ -142,24 +142,24 @@ func (p *YaegiPlugin) Generate() (resmap.ResMap, error) {
 		var gocode []byte
 		gocode, err = ioutil.ReadFile(p.BuildScriptFile)
 		if err != nil {
-			p.logger.Printf("Error loading go file: %v\n", err)
+			p.logger.Errorf("Error loading go file: %v\n", err)
 			return nil, err
 		}
 		_, err = i.Eval(string(gocode))
 	}
 	if err != nil {
-		p.logger.Printf("Go Script Error: %v\n", err)
+		p.logger.Errorf("Go Script Error: %v\n", err)
 		return nil, err
 	}
 	v, err := i.Eval("kust.Generate")
 	if err != nil {
-		p.logger.Printf("Go Script Error: %v\n", err)
+		p.logger.Errorf("Go Script Error: %v\n", err)
 		return nil, err
 	}
 	generate := v.Interface().(func([]string) (*[][]byte, error))
 	generateRet, err := generate(p.BuildArgs)
 	if err != nil {
-		p.logger.Printf("Error from post-Build: %v\n", err)
+		p.logger.Errorf("Error from post-Build: %v\n", err)
 		return nil, err
 	}
 	var retVal []*resource.Resource
@@ -168,7 +168,7 @@ func (p *YaegiPlugin) Generate() (resmap.ResMap, error) {
 		for _, r := range kustBytes {
 			res, err := p.rf.RF().FromBytes(r)
 			if err != nil {
-				p.logger.Printf("error unmarshalling resource from bytes: %v\n", err)
+				p.logger.Errorf("error unmarshalling resource from bytes: %v\n", err)
 				return nil, err
 			}
 			retVal = append(retVal, res)

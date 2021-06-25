@@ -8,6 +8,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
+	go.uber.org/zap v1.17.0 // indirect
 	sigs.k8s.io/kustomize/api v0.8.9
 	sigs.k8s.io/kustomize/cmd/config v0.9.11
 	sigs.k8s.io/kustomize/kyaml v0.10.19

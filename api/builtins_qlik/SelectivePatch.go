@@ -1,8 +1,6 @@
 package builtins_qlik
 
 import (
-	"log"
-
 	"github.com/pkg/errors"
 	"sigs.k8s.io/kustomize/api/builtins"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
@@ -11,6 +9,7 @@ import (
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/types"
 	"sigs.k8s.io/yaml"
+	"go.uber.org/zap"
 )
 
 type SelectivePatchPlugin struct {
@@ -20,7 +19,7 @@ type SelectivePatchPlugin struct {
 	Defaults   []types.Patch `json:"defaults,omitempty" yaml:"defaults,omitempty"`
 	ts         []resmap.Transformer
 	tsDefaults []resmap.Transformer
-	logger     *log.Logger
+	logger     *zap.SugaredLogger
 }
 
 func (p *SelectivePatchPlugin) makeIndividualPatches(pat types.Patch) ([]byte, error) {
@@ -37,12 +36,12 @@ func (p *SelectivePatchPlugin) Config(h *resmap.PluginHelpers, c []byte) (err er
 	fSys := filesys.MakeFsOnDisk()
 	newLdr, err := loader.NewLoader(loader.RestrictionNone, h.Loader().Root(), fSys)
 	if err != nil {
-		p.logger.Printf("error creating a new loader from default loader, error: %v\n", err)
+		p.logger.Errorf("error creating a new loader from default loader, error: %v\n", err)
 		return errors.Wrapf(err, "Cannot create new loader from default loader")
 	}
 	// End of work around
 	if err := yaml.Unmarshal(c, p); err != nil {
-		p.logger.Printf("error unmarshalling bytes: %v, error: %v\n", string(c), err)
+		p.logger.Errorf("error unmarshalling bytes: %v, error: %v\n", string(c), err)
 		return errors.Wrapf(err, "Inside unmarshal "+string(c))
 	}
 	for _, v := range p.Patches {
@@ -51,7 +50,7 @@ func (p *SelectivePatchPlugin) Config(h *resmap.PluginHelpers, c []byte) (err er
 		prefixer := builtins.NewPatchTransformerPlugin()
 		err = prefixer.Config(resmap.NewPluginHelpers(newLdr, h.Validator(), h.ResmapFactory(), types.DisabledPluginConfig()), b)
 		if err != nil {
-			p.logger.Printf("error executing PatchTransformerPlugin.Config(), error: %v\n", err)
+			p.logger.Errorf("error executing PatchTransformerPlugin.Config(), error: %v\n", err)
 			return errors.Wrapf(err, "stringprefixer configure")
 		}
 		p.ts = append(p.ts, prefixer)
@@ -63,7 +62,7 @@ func (p *SelectivePatchPlugin) Config(h *resmap.PluginHelpers, c []byte) (err er
 		prefixer := builtins.NewPatchTransformerPlugin()
 		err = prefixer.Config(resmap.NewPluginHelpers(newLdr, h.Validator(), h.ResmapFactory(), types.DisabledPluginConfig()), b)
 		if err != nil {
-			p.logger.Printf("error executing PatchTransformerPlugin.Config(), error: %v\n", err)
+			p.logger.Errorf("error executing PatchTransformerPlugin.Config(), error: %v\n", err)
 			return errors.Wrapf(err, "stringprefixer configure")
 		}
 		p.tsDefaults = append(p.tsDefaults, prefixer)
@@ -77,7 +76,7 @@ func (p *SelectivePatchPlugin) Transform(m resmap.ResMap) error {
 		for _, t := range p.ts {
 			err := t.Transform(m)
 			if err != nil {
-				p.logger.Printf("error executing Transform(), error: %v\n", err)
+				p.logger.Errorf("error executing Transform(), error: %v\n", err)
 				return err
 			}
 		}
@@ -86,7 +85,7 @@ func (p *SelectivePatchPlugin) Transform(m resmap.ResMap) error {
 		for _, t := range p.tsDefaults {
 			err := t.Transform(m)
 			if err != nil {
-				p.logger.Printf("error executing Transform(), error: %v\n", err)
+				p.logger.Errorf("error executing Transform(), error: %v\n", err)
 				return err
 			}
 		}

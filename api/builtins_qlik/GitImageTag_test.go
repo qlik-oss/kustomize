@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"go.uber.org/zap"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/provider"
 	"sigs.k8s.io/kustomize/api/types"
@@ -145,7 +145,7 @@ func Test_ImageGitTag_getGitDescribeForHead(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			tag, err := utils.GetGitDescribeForHead(testCase.dir, "9.9.9")
+			tag, err := utils.GetGitDescribeForHead(testCase.dir, "9.9.9", nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v\n", err)
 			}
@@ -453,7 +453,10 @@ spec:
 			}
 		}(),
 	}
-	plugin := GitImageTagPlugin{logger: log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds)}
+	baseLogger, _ := zap.NewDevelopment()
+	logger := baseLogger.Sugar()
+	defer logger.Sync()
+	plugin := GitImageTagPlugin{logger: logger}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			p := provider.NewDefaultDepProvider()

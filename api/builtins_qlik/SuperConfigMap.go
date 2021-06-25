@@ -2,18 +2,18 @@ package builtins_qlik
 
 import (
 	"fmt"
-	"log"
 
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 
 	"sigs.k8s.io/kustomize/api/builtins"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/yaml"
+	"go.uber.org/zap"
 )
 
 type SuperConfigMapPlugin struct {
 	Data   map[string]interface{} `json:"data,omitempty" yaml:"data,omitempty"`
-	logger *log.Logger
+	logger *zap.SugaredLogger
 	builtins.ConfigMapGeneratorPlugin
 	SuperMapPluginBase
 }
@@ -23,12 +23,12 @@ func (p *SuperConfigMapPlugin) Config(h *resmap.PluginHelpers, c []byte) (err er
 	p.Data = make(map[string](interface{}))
 	err = yaml.Unmarshal(c, p)
 	if err != nil {
-		p.logger.Printf("error unmarshalling yaml, error: %v\n", err)
+		p.logger.Errorf("error unmarshalling yaml, error: %v\n", err)
 		return err
 	}
 	err = p.SuperMapPluginBase.SetupTransformerConfig(h.Loader())
 	if err != nil {
-		p.logger.Printf("error setting up transformer config, error: %v\n", err)
+		p.logger.Errorf("error setting up transformer config, error: %v\n", err)
 		return err
 	}
 	return p.ConfigMapGeneratorPlugin.Config(h, c)
@@ -45,7 +45,7 @@ func (p *SuperConfigMapPlugin) Transform(m resmap.ResMap) error {
 	return p.SuperMapPluginBase.Transform(m)
 }
 
-func (p *SuperConfigMapPlugin) GetLogger() *log.Logger {
+func (p *SuperConfigMapPlugin) GetLogger() *zap.SugaredLogger {
 	return p.logger
 }
 

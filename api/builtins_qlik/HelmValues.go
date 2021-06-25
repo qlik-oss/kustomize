@@ -2,9 +2,9 @@ package builtins_qlik
 
 import (
 	"encoding/json"
-	"log"
 
 	"github.com/imdario/mergo"
+	"go.uber.org/zap"
 	"sigs.k8s.io/kustomize/api/builtins_qlik/utils"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/resource"
@@ -22,7 +22,7 @@ type HelmValuesPlugin struct {
 	ReleaseNamespace string                 `json:"releaseNamespace,omitempty" yaml:"releaseNamespace,omitempty"`
 	FieldSpecs       []types.FieldSpec      `json:"fieldSpecs,omitempty" yaml:"fieldSpecs,omitempty"`
 	Values           map[string]interface{} `json:"values,omitempty" yaml:"values,omitempty"`
-	logger           *log.Logger
+	logger           *zap.SugaredLogger
 }
 
 func (p *HelmValuesPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
@@ -37,7 +37,7 @@ func (p *HelmValuesPlugin) mutateValues(in interface{}) (interface{}, error) {
 	mergeFrom["root"] = in
 	err := mergeValues(&mergedData, mergeFrom, p.Overwrite)
 	if err != nil {
-		p.logger.Printf("error executing mergeValues(), error: %v\n", err)
+		p.logger.Errorf("error executing mergeValues(), error: %v\n", err)
 		return nil, err
 	}
 
@@ -45,7 +45,7 @@ func (p *HelmValuesPlugin) mutateValues(in interface{}) (interface{}, error) {
 	mergeFrom["root"] = p.Values
 	err = mergeValues(&mergedData, mergeFrom, p.Overwrite)
 	if err != nil {
-		p.logger.Printf("error executing mergeValues(), error: %v\n", err)
+		p.logger.Errorf("error executing mergeValues(), error: %v\n", err)
 		return nil, err
 	}
 	return mergedData["root"], nil

@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
@@ -60,7 +60,7 @@ type HelmChartPlugin struct {
 	LockTimeoutSeconds             int                    `json:"lockTimeoutSeconds,omitempty" yaml:"lockTimeoutSeconds,omitempty"`
 	IncludeCRDs                    *bool                  `json:"includeCRDs,omitempty" yaml:"includeCRDs,omitempty"`
 	rf                             *resmap.Factory
-	logger                         *log.Logger
+	logger                         *zap.SugaredLogger
 	hash                           string
 	hashFolder                     string
 	cacheEnabled                   bool
@@ -72,7 +72,7 @@ func (p *HelmChartPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) 
 	p.cacheEnabled, _ = strconv.ParseBool(os.Getenv("KUST_HELM_CACHE"))
 
 	if err = yaml.Unmarshal(c, p); err != nil {
-		p.logger.Printf("error unmarshalling yaml config: %v, error: %v\n", string(c), err)
+		p.logger.Errorf("error unmarshalling yaml config: %v, error: %v\n", string(c), err)
 		return err
 	}
 
@@ -97,13 +97,13 @@ func (p *HelmChartPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) 
 	}
 	if generatedChartHome {
 		if err = os.MkdirAll(p.ChartHome, os.ModePerm); err != nil {
-			p.logger.Printf("error creating chartHome directory: %v, error: %v\n", p.ChartHome, err)
+			p.logger.Errorf("error creating chartHome directory: %v, error: %v\n", p.ChartHome, err)
 			return err
 		}
 	}
 
 	if p.ChartRepo == "" {
-		p.logger.Println("No chartRepo set in the config. If fetch is needed, it will fail.")
+		p.logger.Info("No chartRepo set in the config. If fetch is needed, it will fail.")
 	}
 
 	if p.ReleaseName == "" {
@@ -117,7 +117,7 @@ func (p *HelmChartPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) 
 	if p.cacheEnabled {
 		p.hashFolder = filepath.Join(p.ChartHome, ".plugincache")
 		if err = os.MkdirAll(p.hashFolder, os.ModePerm); err != nil {
-			p.logger.Printf("error creating hashfolder: %v, error: %v\n", p.hashFolder, err)
+			p.logger.Errorf("error creating hashfolder: %v, error: %v\n", p.hashFolder, err)
 			return err
 		}
 		chartHash := sha256.New()
@@ -154,7 +154,7 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 		lockFilePath := filepath.Join(p.hashFolder, fmt.Sprintf("%v.flock", p.hash))
 
 		if unlockFn, err := utils.LockPath(lockFilePath, p.LockTimeoutSeconds, p.LockRetryDelayMinMilliSeconds, p.LockRetryDelayMaxMilliSeconds, p.logger); err != nil {
-			p.logger.Printf("error locking %v, error: %v\n", hashFilePath, err)
+			p.logger.Errorf("error locking %v, error: %v\n", hashFilePath, err)
 			return nil, err
 		} else {
 			defer unlockFn()
@@ -163,21 +163,21 @@ func (p *HelmChartPlugin) Generate() (resmap.ResMap, error) {
 	if _, err := os.Stat(hashFilePath); err != nil {
 		if os.IsNotExist(err) {
 			if templatedYaml, err = p.executeHelmTemplate(); err != nil {
-				p.logger.Printf("error executing helm template, error: %v\n", err)
+				p.logger.Errorf("error executing helm template, error: %v\n", err)
 				return nil, err
 			} else if p.cacheEnabled {
 				if err = ioutil.WriteFile(hashFilePath, templatedYaml, 0644); err != nil {
-					p.logger.Printf("error writing kustomization yaml to file: %v, error: %v\n", hashFilePath, err)
+					p.logger.Errorf("error writing kustomization yaml to file: %v, error: %v\n", hashFilePath, err)
 				}
 			}
 		} else {
 			return nil, err
 		}
 	} else {
-		p.logger.Println("reading previously generated yaml from plugin cache...")
+		p.logger.Info("reading previously generated yaml from plugin cache...")
 		templatedYaml, err = ioutil.ReadFile(hashFilePath)
 		if err != nil {
-			p.logger.Printf("error reading file: %v, error: %v\n", hashFilePath, err)
+			p.logger.Errorf("error reading file: %v, error: %v\n", hashFilePath, err)
 			return nil, err
 		}
 	}
@@ -192,7 +192,7 @@ func (p *HelmChartPlugin) executeHelmTemplate() ([]byte, error) {
 	settings := cli.New()
 
 	if err := p.helmFetchIfRequired(settings); err != nil {
-		p.logger.Printf("error checking/fetching chart, err: %v\n", err)
+		p.logger.Errorf("error checking/fetching chart, err: %v\n", err)
 		return nil, err
 	}
 
@@ -207,15 +207,16 @@ func (p *HelmChartPlugin) executeHelmTemplate() ([]byte, error) {
 		chartPath = filepath.Join(p.ChartHome, p.ChartName)
 	}
 
+	os.RemoveAll(filepath.Join(chartPath, "tmpcharts"))
 	c, err := p.loadChartWithDependencies(settings, chartPath)
 	if err != nil {
-		p.logger.Printf("error building dependencies, err: %v\n", err)
+		p.logger.Errorf("error building dependencies, err: %v\n", err)
 		return nil, err
 	}
 
 	resources, err := p.helmTemplate(settings, c, p.ReleaseName, p.Values)
 	if err != nil {
-		p.logger.Printf("error executing helm template for chart: %v at path: %v, err: %v\n", chartName, chartPath, err)
+		p.logger.Errorf("error executing helm template for chart: %v at path: %v, err: %v\n", chartName, chartPath, err)
 		return nil, err
 	}
 
@@ -240,7 +241,7 @@ func (p *HelmChartPlugin) directoryExists(path string) (exists bool, err error) 
 func (p *HelmChartPlugin) helmFetchIfRequired(settings *cli.EnvSettings) error {
 	lockFilePath := filepath.Join(p.ChartHome, fmt.Sprintf("%v.flock", p.ChartName))
 	if unlockFn, err := utils.LockPath(lockFilePath, p.LockTimeoutSeconds, p.LockRetryDelayMinMilliSeconds, p.LockRetryDelayMaxMilliSeconds, p.logger); err != nil {
-		p.logger.Printf("error locking chart directory: %v in chartHome: %v, error: %v\n", p.ChartName, p.ChartHome, err)
+		p.logger.Errorf("error locking chart directory: %v in chartHome: %v, error: %v\n", p.ChartName, p.ChartHome, err)
 		return err
 	} else {
 		defer unlockFn()
@@ -248,22 +249,22 @@ func (p *HelmChartPlugin) helmFetchIfRequired(settings *cli.EnvSettings) error {
 
 	chartDir := filepath.Join(p.ChartHome, p.ChartName)
 	if exists, err := p.directoryExists(chartDir); err != nil {
-		p.logger.Printf("error checking if chart was already fetched to path: %v, err: %v\n", chartDir, err)
+		p.logger.Errorf("error checking if chart was already fetched to path: %v, err: %v\n", chartDir, err)
 		return err
 	} else if !exists {
 		if !strings.HasPrefix(p.ChartRepo, "oci") {
 			if repoName, err := p.helmConfigForChart(settings, p.ChartRepoName); err != nil {
 				return err
 			} else if err := p.helmFetch(settings, fmt.Sprintf("%v/%v", repoName, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
-				p.logger.Printf("error fetching chart, err: %v\n", err)
+				p.logger.Errorf("error fetching chart, err: %v\n", err)
 				return err
 			}
 		} else if err := p.helmOciFetch(settings, fmt.Sprintf("%v/%v", p.ChartRepo, p.ChartName), p.ChartVersion, p.ChartHome); err != nil {
-			p.logger.Printf("error fetching chart, err: %v\n", err)
+			p.logger.Errorf("error fetching chart, err: %v\n", err)
 			return err
 		}
 	} else {
-		p.logger.Printf("no need to fetch, chart is already at path: %v\n", chartDir)
+		p.logger.Infof("no need to fetch, chart is already at path: %v\n", chartDir)
 	}
 	return nil
 }
@@ -272,7 +273,7 @@ func (p *HelmChartPlugin) helmConfigForChart(settings *cli.EnvSettings, repoName
 	helmConfigHomeAndCacheDir := filepath.Dir(settings.RepositoryConfig)
 	lockFilePath := filepath.Join(helmConfigHomeAndCacheDir, "helm-repo-config.flock")
 	if unlockFn, err := utils.LockPath(lockFilePath, p.LockTimeoutSeconds, p.LockRetryDelayMinMilliSeconds, p.LockRetryDelayMaxMilliSeconds, p.logger); err != nil {
-		p.logger.Printf("error locking helm config home and cache directory: %v, error: %v\n", helmConfigHomeAndCacheDir, err)
+		p.logger.Errorf("error locking helm config home and cache directory: %v, error: %v\n", helmConfigHomeAndCacheDir, err)
 		return "", err
 	} else {
 		defer unlockFn()
@@ -294,11 +295,11 @@ func (p *HelmChartPlugin) helmConfigForChart(settings *cli.EnvSettings, repoName
 		URL:      p.ChartRepo,
 		Username: os.Getenv(fmt.Sprintf("%v_HELM_REPO_USERNAME", repoName)),
 		Password: os.Getenv(fmt.Sprintf("%v_HELM_REPO_PASSWORD", repoName))}); err != nil {
-		p.logger.Printf("error adding repo: %v, err: %v\n", p.ChartRepo, err)
+		p.logger.Errorf("error adding repo: %v, err: %v\n", p.ChartRepo, err)
 		return "", err
 	}
 	if err := p.helmReposUpdate(settings); err != nil {
-		p.logger.Printf("error updating helm repos, err: %v\n", err)
+		p.logger.Errorf("error updating helm repos, err: %v\n", err)
 		return "", err
 	}
 	return repoName, nil
@@ -344,7 +345,7 @@ func (p *HelmChartPlugin) helmRepoAdd(settings *cli.EnvSettings, repoEntry *repo
 	if err := repoFile.WriteFile(repoFilePath, 0644); err != nil {
 		return err
 	}
-	p.logger.Printf("%q has been added to your repositories\n", repoEntry.Name)
+	p.logger.Infof("%q has been added to your repositories\n", repoEntry.Name)
 	return nil
 }
 
@@ -375,10 +376,10 @@ func (p *HelmChartPlugin) helmReposUpdate(settings *cli.EnvSettings) error {
 		if fileInfo, err := os.Stat(indexFilePath); err != nil {
 			return err
 		} else if timerSinceUpdate := now.Sub(fileInfo.ModTime()); timerSinceUpdate > time.Duration(p.RepoIndexFileStaleAfterSeconds)*time.Second {
-			p.logger.Printf("Will be updating repository: %v\n", r.Config.Name)
+			p.logger.Infof("Will be updating repository: %v\n", r.Config.Name)
 			repos = append(repos, r)
 		} else {
-			p.logger.Printf("Will NOT be updating repository: %v, because it was updated: %v ago\n", r.Config.Name, timerSinceUpdate)
+			p.logger.Infof("Will NOT be updating repository: %v, because it was updated: %v ago\n", r.Config.Name, timerSinceUpdate)
 		}
 	}
 
@@ -388,9 +389,9 @@ func (p *HelmChartPlugin) helmReposUpdate(settings *cli.EnvSettings) error {
 			go func(re *repo.ChartRepository) {
 				defer wg.Done()
 				if _, err := re.DownloadIndexFile(); err != nil {
-					p.logger.Printf("...Unable to get an update from the %q chart repository (%s):\n\t%s\n", re.Config.Name, re.Config.URL, err)
+					p.logger.Errorf("...Unable to get an update from the %q chart repository (%s):\n\t%s\n", re.Config.Name, re.Config.URL, err)
 				} else {
-					p.logger.Printf("...Successfully got an update from the %q chart repository\n", re.Config.Name)
+					p.logger.Infof("...Successfully got an update from the %q chart repository\n", re.Config.Name)
 				}
 			}(r)
 		}
@@ -401,7 +402,7 @@ func (p *HelmChartPlugin) helmReposUpdate(settings *cli.EnvSettings) error {
 }
 
 func (p *HelmChartPlugin) helmOciFetch(settings *cli.EnvSettings, chartRef, version, chartUntarDirPath string) error {
-	p.logger.Printf("Fetching chart chartRef: %v, Version: %v\n", chartRef, version)
+	p.logger.Infof("Fetching chart chartRef: %v, Version: %v\n", chartRef, version)
 
 	pullConfig := new(action.Configuration)
 	if err := pullConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {}); err != nil {
@@ -419,7 +420,7 @@ func (p *HelmChartPlugin) helmOciFetch(settings *cli.EnvSettings, chartRef, vers
 
 	registryClient, err := registry.NewClient(
 		registry.ClientOptDebug(settings.Debug),
-		registry.ClientOptWriter(p.logger.Writer()),
+		registry.ClientOptWriter(utils.GetLogWriter(p.logger)),
 		registry.ClientOptCredentialsFile(credentialsFile),
 	)
 	if err != nil {
@@ -504,7 +505,7 @@ func defaultKeyring() string {
 func (p *HelmChartPlugin) loadChartWithDependencies(settings *cli.EnvSettings, chartPath string) (*chart.Chart, error) {
 	lockFilePath := fmt.Sprintf("%v.flock", chartPath)
 	if unlockFn, err := utils.LockPath(lockFilePath, p.LockTimeoutSeconds, p.LockRetryDelayMinMilliSeconds, p.LockRetryDelayMaxMilliSeconds, p.logger); err != nil {
-		p.logger.Printf("error locking chart directory: %v, error: %v\n", chartPath, err)
+		p.logger.Errorf("error locking chart directory: %v, error: %v\n", chartPath, err)
 		return nil, err
 	} else {
 		defer unlockFn()
@@ -522,7 +523,7 @@ func (p *HelmChartPlugin) loadChartWithDependencies(settings *cli.EnvSettings, c
 	buildingDependencies := false
 	if req := c.Metadata.Dependencies; req != nil {
 		if ok, err := p.checkDependencies(c, req); err != nil {
-			p.logger.Printf("dependency check returned failed: %v\n", err)
+			p.logger.Errorf("dependency check returned failed: %v\n", err)
 			return nil, err
 		} else if !ok {
 			buildingDependencies = true
@@ -538,14 +539,14 @@ func (p *HelmChartPlugin) loadChartWithDependencies(settings *cli.EnvSettings, c
 
 			registryClient, err := registry.NewClient(
 				registry.ClientOptDebug(settings.Debug),
-				registry.ClientOptWriter(p.logger.Writer()),
+				registry.ClientOptWriter(utils.GetLogWriter(p.logger)),
 				registry.ClientOptCredentialsFile(credentialsFile),
 			)
 			if err != nil {
 				return nil, err
 			}
 			man := &downloader.Manager{
-				Out:              p.logger.Writer(),
+				Out:              utils.GetLogWriter(p.logger),
 				ChartPath:        chartPath,
 				Keyring:          defaultKeyring(),
 				Getters:          getter.All(settings),
@@ -574,7 +575,7 @@ func (p *HelmChartPlugin) loadChartWithDependencies(settings *cli.EnvSettings, c
 
 func (p *HelmChartPlugin) checkDependencies(ch *chart.Chart, reqs []*chart.Dependency) (bool, error) {
 	if err := action.CheckDependencies(ch, reqs); err != nil {
-		p.logger.Printf("helm dependency presence checker returned a non-fatal error: %v\n", err)
+		p.logger.Warnf("helm dependency presence checker returned a non-fatal error: %v\n", err)
 		return false, nil
 	} else {
 		dependenciesOnDisk := make(map[string]*chart.Chart)
@@ -599,23 +600,23 @@ func (p *HelmChartPlugin) helmConfigForDependencies(settings *cli.EnvSettings, c
 	helmConfigHomeAndCacheDir := filepath.Dir(settings.RepositoryConfig)
 	lockFilePath := filepath.Join(helmConfigHomeAndCacheDir, "helm-repo-config.flock")
 	if unlockFn, err := utils.LockPath(lockFilePath, p.LockTimeoutSeconds, p.LockRetryDelayMinMilliSeconds, p.LockRetryDelayMaxMilliSeconds, p.logger); err != nil {
-		p.logger.Printf("error locking helm config home and cache directory: %v, error: %v\n", helmConfigHomeAndCacheDir, err)
+		p.logger.Errorf("error locking helm config home and cache directory: %v, error: %v\n", helmConfigHomeAndCacheDir, err)
 		return err
 	} else {
 		defer unlockFn()
 	}
 
 	if dependencyRepoEntries, err := p.resolveDependencyRepos(settings, c); err != nil {
-		p.logger.Printf("error resolving dependency repos: %v\n", err)
+		p.logger.Errorf("error resolving dependency repos: %v\n", err)
 		return err
 	} else {
 		for _, repoEntry := range dependencyRepoEntries {
 			if err := p.helmRepoAdd(settings, repoEntry); err != nil {
-				p.logger.Printf("error adding dependency repo: %v to the repo file: %v\n", repoEntry.Name, err)
+				p.logger.Errorf("error adding dependency repo: %v to the repo file: %v\n", repoEntry.Name, err)
 				return err
 			}
 			if err := p.helmReposUpdate(settings); err != nil {
-				p.logger.Printf("error updating helm repos while processing dependencies, err: %v\n", err)
+				p.logger.Errorf("error updating helm repos while processing dependencies, err: %v\n", err)
 				return err
 			}
 		}
