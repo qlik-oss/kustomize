@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/mholt/archiver/v3"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 	"sigs.k8s.io/kustomize/api/filesys"
 	"sigs.k8s.io/kustomize/api/loader"
 	"sigs.k8s.io/kustomize/api/provider"
@@ -173,7 +173,10 @@ metadata:
 	} else {
 		testExecutableResolver.path = kustomizeExecutablePath
 	}
-	plugin := GoGetterPlugin{logger: log.New(os.Stdout, "", log.LstdFlags|log.LUTC|log.Lmicroseconds), executableResolver: testExecutableResolver}
+	baseLogger, _ := zap.NewDevelopment()
+	logger := baseLogger.Sugar()
+	defer logger.Sync()
+	plugin := GoGetterPlugin{logger: logger, executableResolver: testExecutableResolver}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			p := provider.NewDefaultDepProvider()
