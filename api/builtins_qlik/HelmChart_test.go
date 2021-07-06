@@ -858,7 +858,7 @@ repositories:
   keyFile: ""
   name: qlik
   password: ""
-  url: https://qliktech.jfrog.io/qliktech/qlikhelm
+  url: https://qlik-download.github.io/qseok
   username: ""
 `
 			return &helmRepoAddTestCaseT{
@@ -866,7 +866,7 @@ repositories:
 				repoFileContent: repoFileContent,
 				repoAddEntry: &repo.Entry{
 					Name: "qlik",
-					URL:  "https://qliktech.jfrog.io/qliktech/qlikhelm/",
+					URL:  "https://qlik-download.github.io/qseok/",
 				},
 				checkAssertions: func(t *testing.T, err error, resultRepoFileContent []byte) {
 					assert.NoError(t, err)
@@ -885,7 +885,7 @@ repositories:
   keyFile: ""
   name: qlik
   password: ""
-  url: https://qliktech.jfrog.io/qliktech/qlikhelm/
+  url: https://qlik-download.github.io/qseok/
   username: ""
 `
 			return &helmRepoAddTestCaseT{
@@ -893,7 +893,7 @@ repositories:
 				repoFileContent: repoFileContent,
 				repoAddEntry: &repo.Entry{
 					Name: "qlik",
-					URL:  "https://qliktech.jfrog.io/qliktech/qlikhelm",
+					URL:  "https://qlik-download.github.io/qseok",
 				},
 				checkAssertions: func(t *testing.T, err error, resultRepoFileContent []byte) {
 					assert.NoError(t, err)
@@ -912,7 +912,7 @@ repositories:
   keyFile: ""
   name: qlik
   password: ""
-  url: https://qliktech.jfrog.io/qliktech/qlikhelm
+  url: https://qlik-download.github.io/qseok
   username: ""
 `
 			return &helmRepoAddTestCaseT{
@@ -939,7 +939,7 @@ repositories:
   keyFile: ""
   name: qlik
   password: ""
-  url: https://qliktech.jfrog.io/qliktech/qlikhelm
+  url: https://qlik-download.github.io/qseok
   username: ""
 `
 			return &helmRepoAddTestCaseT{
@@ -947,7 +947,7 @@ repositories:
 				repoFileContent: repoFileContent,
 				repoAddEntry: &repo.Entry{
 					Name:     "qlik",
-					URL:      "https://qliktech.jfrog.io/qliktech/qlikhelm",
+					URL:      "https://qlik-download.github.io/qseok",
 					Username: "foobar",
 				},
 				checkAssertions: func(t *testing.T, err error, resultRepoFileContent []byte) {
@@ -961,7 +961,7 @@ repositories:
   keyFile: ""
   name: qlik
   password: ""
-  url: https://qliktech.jfrog.io/qliktech/qlikhelm
+  url: https://qlik-download.github.io/qseok
   username: foobar
 `, string(resultRepoFileContent))
 				},
@@ -978,7 +978,7 @@ repositories:
   keyFile: ""
   name: qlik
   password: ""
-  url: https://qliktech.jfrog.io/qliktech/qlikhelm
+  url: https://qlik-download.github.io/qseok
   username: ""
 `
 			return &helmRepoAddTestCaseT{
@@ -986,7 +986,7 @@ repositories:
 				repoFileContent: repoFileContent,
 				repoAddEntry: &repo.Entry{
 					Name:     "qlik",
-					URL:      "https://qliktech.jfrog.io/qliktech/qlikhelm",
+					URL:      "https://qlik-download.github.io/qseok",
 					Password: "foobar",
 				},
 				checkAssertions: func(t *testing.T, err error, resultRepoFileContent []byte) {
@@ -1000,7 +1000,7 @@ repositories:
   keyFile: ""
   name: qlik
   password: foobar
-  url: https://qliktech.jfrog.io/qliktech/qlikhelm
+  url: https://qlik-download.github.io/qseok
   username: ""
 `, string(resultRepoFileContent))
 				},

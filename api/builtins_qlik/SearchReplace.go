@@ -41,7 +41,7 @@ type SearchReplacePlugin struct {
 	fieldSpec                 types.FieldSpec
 	re                        *regexp.Regexp
 	pwd                       string
-	replaceStr                string
+	replaceStr                *string
 }
 
 func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
@@ -49,7 +49,7 @@ func (p *SearchReplacePlugin) Config(h *resmap.PluginHelpers, c []byte) (err err
 	p.Path = ""
 	p.Search = ""
 	p.Replace = ""
-	p.replaceStr = ""
+	p.replaceStr = nil
 	p.ReplaceType = ""
 	p.ReplaceWithEnvVar = ""
 	p.ReplaceWithObjRef = nil
@@ -83,20 +83,25 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 		return err
 	}
 	if p.Replace != "" {
+		var replaceStr string
 		switch newValue := p.Replace.(type) {
 		case int:
-			p.replaceStr = strconv.FormatInt(int64(newValue), 10)
+			replaceStr = strconv.FormatInt(int64(newValue), 10)
+			p.replaceStr = &replaceStr
 		case bool:
-			p.replaceStr = strconv.FormatBool(newValue)
+			replaceStr = strconv.FormatBool(newValue)
+			p.replaceStr = &replaceStr
 		case float64:
-			p.replaceStr = strconv.FormatFloat(newValue, 'f', -1, 64)
+			replaceStr = strconv.FormatFloat(newValue, 'f', -1, 64)
+			p.replaceStr = &replaceStr
 		case string:
-			p.replaceStr = newValue
+			replaceStr = newValue
+			p.replaceStr = &replaceStr
 		default:
 			return errors.New("replacement input value of unknown type")
 		}
 	}
-	if p.replaceStr == "" {
+	if p.replaceStr == nil {
 		if p.ReplaceWithObjRef != nil {
 			var replaceEmpty bool
 			for _, res := range m.Resources() {
@@ -104,58 +109,68 @@ func (p *SearchReplacePlugin) Transform(m resmap.ResMap) error {
 					if replacementValue, replace, err := getReplacementValue(res, p.ReplaceWithObjRef.FieldRef.FieldPath); err != nil {
 						p.logger.Debugf("error getting replacement value: %v\n", err)
 					} else {
-						p.replaceStr = replacementValue
+						p.replaceStr = &replacementValue
 						p.Replace = replace
 						replaceEmpty = true
 						break
 					}
 				}
 			}
-			if p.replaceStr == "" && !replaceEmpty {
-				p.logger.Debugf("Object Reference could not be found")
-				return nil
+			if p.replaceStr == nil {
+				if replaceEmpty {
+					replaceStr := ""
+					p.replaceStr = &replaceStr
+				} else {
+					p.logger.Debugf("Object Reference could not be found")
+					return nil
+				}
 			}
 		} else if p.ReplaceWithGitDescribeTag != nil {
 			if gitDescribeTag, err := utils.GetGitDescribeForHead(p.pwd, p.ReplaceWithGitDescribeTag.Default, p.logger); err != nil {
 				return err
 			} else {
-				p.replaceStr = strings.TrimPrefix(gitDescribeTag, "v")
+				replaceStr := strings.TrimPrefix(gitDescribeTag, "v")
+				p.replaceStr = &replaceStr
 				p.Replace = p.replaceStr
 			}
 		} else if len(p.ReplaceWithEnvVar) > 0 {
-			p.replaceStr = os.Getenv(p.ReplaceWithEnvVar)
-			p.Replace = p.replaceStr
+			if replaceStr, exists := os.LookupEnv(p.ReplaceWithEnvVar); exists {
+				p.Replace = replaceStr
+				p.replaceStr = &replaceStr
+			}
 		}
 	}
-	for _, r := range resources {
-		if p.fieldSpec.Path == "/" {
-			if rmap, err := r.Map(); err != nil {
-				p.logger.Infof("error reseource.Map(), error: %v\n", err)
-				return err
-			} else if newRoot, err := p.searchAndReplace(rmap, false); err != nil {
-				p.logger.Infof("error executing transformers.MutateField(), error: %v\n", err)
-				return err
-			} else if newRootMap, newRootIsMap := newRoot.(map[string]interface{}); !newRootIsMap {
-				return errors.New("search/replace on root did not return a map[string]interface{}")
-			} else if jsonBytes, err := json.Marshal(newRootMap); err != nil {
-				return err
-			} else if err := r.UnmarshalJSON(jsonBytes); err != nil {
+	if p.replaceStr != nil {
+		for _, r := range resources {
+			if p.fieldSpec.Path == "/" {
+				if rmap, err := r.Map(); err != nil {
+					p.logger.Infof("error reseource.Map(), error: %v\n", err)
+					return err
+				} else if newRoot, err := p.searchAndReplace(rmap, false); err != nil {
+					p.logger.Infof("error executing transformers.MutateField(), error: %v\n", err)
+					return err
+				} else if newRootMap, newRootIsMap := newRoot.(map[string]interface{}); !newRootIsMap {
+					return errors.New("search/replace on root did not return a map[string]interface{}")
+				} else if jsonBytes, err := json.Marshal(newRootMap); err != nil {
+					return err
+				} else if err := r.UnmarshalJSON(jsonBytes); err != nil {
+					return err
+				}
+			} else if err := filtersutil.ApplyToJSON(kio.FilterFunc(func(nodes []*kyaml.RNode) ([]*kyaml.RNode, error) {
+				return kio.FilterAll(kyaml.FilterFunc(func(rn *kyaml.RNode) (*kyaml.RNode, error) {
+					if err := rn.PipeE(fieldspec.Filter{
+						FieldSpec: p.fieldSpec,
+						SetValue: func(n *kyaml.RNode) error {
+							return p.searchAndReplaceRNode(n, isSecretDataTarget(r, kutils.PathSplitter(p.fieldSpec.Path)))
+						},
+					}); err != nil {
+						return nil, err
+					}
+					return rn, nil
+				})).Filter(nodes)
+			}), r); err != nil {
 				return err
 			}
-		} else if err := filtersutil.ApplyToJSON(kio.FilterFunc(func(nodes []*kyaml.RNode) ([]*kyaml.RNode, error) {
-			return kio.FilterAll(kyaml.FilterFunc(func(rn *kyaml.RNode) (*kyaml.RNode, error) {
-				if err := rn.PipeE(fieldspec.Filter{
-					FieldSpec: p.fieldSpec,
-					SetValue: func(n *kyaml.RNode) error {
-						return p.searchAndReplaceRNode(n, isSecretDataTarget(r, kutils.PathSplitter(p.fieldSpec.Path)))
-					},
-				}); err != nil {
-					return nil, err
-				}
-				return rn, nil
-			})).Filter(nodes)
-		}), r); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -226,7 +241,7 @@ func (p *SearchReplacePlugin) searchAndReplaceRNode(node *kyaml.RNode, base64Enc
 		if strChanged, ok := changed.(string); ok {
 			var targetType = "string"
 			if p.ReplaceType == "" {
-				if strChanged == p.replaceStr {
+				if strChanged == *p.replaceStr {
 					targetType = reflect.TypeOf(p.Replace).String()
 				}
 			} else {
@@ -266,11 +281,11 @@ func (p *SearchReplacePlugin) searchAndReplace(in interface{}, base64Encoded boo
 			if decodedValue, err := base64.StdEncoding.DecodeString(target); err != nil {
 				return nil, err
 			} else {
-				replacedDecodedValue := p.re.ReplaceAllString(string(decodedValue), p.replaceStr)
+				replacedDecodedValue := p.re.ReplaceAllString(string(decodedValue), *p.replaceStr)
 				return base64.StdEncoding.EncodeToString([]byte(replacedDecodedValue)), nil
 			}
 		} else {
-			retVal := p.re.ReplaceAllString(target, p.replaceStr)
+			retVal := p.re.ReplaceAllString(target, *p.replaceStr)
 			// didn't replace anything to retain type
 			if retVal != target {
 				return retVal, nil
@@ -291,7 +306,7 @@ func (p *SearchReplacePlugin) marshallToJsonAndReplace(in interface{}) (interfac
 		p.logger.Infof("error marshalling interface to JSON, error: %v\n", err)
 		return nil, err
 	} else {
-		replaced := p.re.ReplaceAllString(string(marshalledTarget), p.replaceStr)
+		replaced := p.re.ReplaceAllString(string(marshalledTarget), *p.replaceStr)
 		if err := json.Unmarshal([]byte(replaced), &in); err != nil {
 			p.logger.Infof("error unmarshalling JSON string after replacements back to interface, error: %v\n", err)
 			return nil, err
