@@ -24,10 +24,10 @@ type GomsertPlugin struct {
 	DataSources []string `json:"dataSources,omitempty" 	yaml:"dataSources,omitempty"`
 	InputFile   string   `json:"inputFile,omitempty" 	yaml:"inputFile,omitempty"`
 	EnvVars     []struct {
-		Name          string `json:"name" 	yaml:"name"`
-		ValueFromEnv  string `json:"valueFromEnv,omitempty" 	yaml:"valueFromEnv,omitempty"`
-		ValueFromFile string `json:"valueFromFile,omitempty" 	yaml:"valueFromFile,omitempty"`
-		Value         string `json:"value,omitempty" 	yaml:"value,omitempty"`
+		Name          string  `json:"name" 	yaml:"name"`
+		ValueFromEnv  *string `json:"valueFromEnv,omitempty" 	yaml:"valueFromEnv,omitempty"`
+		ValueFromFile *string `json:"valueFromFile,omitempty" 	yaml:"valueFromFile,omitempty"`
+		Value         *string `json:"value,omitempty" 	yaml:"value,omitempty"`
 	} `json:"envVars,omitempty" 	yaml:"envVars,omitempty"`
 	Target      *types.Selector `json:"target,omitempty" yaml:"target,omitempty"`
 	Path        string          `json:"path,omitempty" yaml:"path,omitempty"`
@@ -66,33 +66,34 @@ func (p *GomsertPlugin) Transform(m resmap.ResMap) error {
 
 	if p.DataSources != nil {
 		for _, envVar := range p.EnvVars {
-			p.logger.Infof("DEBUG %v", envVar)
-			if len(envVar.Value) > 0 {
-				p.logger.Infof("environmental variable %v set from value", envVar.Name)
-				env[envVar.Name] = envVar.Value
-			} else if len(envVar.ValueFromFile) > 0 {
-				if data, err = ioutil.ReadFile(envVar.ValueFromFile); err == nil {
-					p.logger.Infof("environmental variable %v set from File %v", envVar.Name, envVar.ValueFromFile)
-					stringData := string(data)
-					env[envVar.Name] = stringData
+			if _, keyexists := env[envVar.Name]; !keyexists {
+				if envVar.Value != nil {
+					p.logger.Infof("environmental variable %v set from value", envVar.Name)
+					env[envVar.Name] = *envVar.Value
+				} else if envVar.ValueFromFile != nil {
+					if data, err = ioutil.ReadFile(*envVar.ValueFromFile); err == nil {
+						p.logger.Infof("environmental variable %v set from File %v", envVar.Name, envVar.ValueFromFile)
+						stringData := string(data)
+						env[envVar.Name] = stringData
+					} else {
+						p.logger.Warnf("environmental variable %v, unable to read file %v, %v", envVar.Name, envVar.ValueFromFile, err)
+					}
+				} else if envVar.ValueFromEnv != nil {
+					if envValue, exists := os.LookupEnv(*envVar.ValueFromEnv); exists {
+						p.logger.Infof("environmental variable %v set from env var %v", envVar.Name, envVar.ValueFromEnv)
+						stringData := string(envValue)
+						env[envVar.Name] = stringData
+					} else {
+						p.logger.Warnf("environmental variable %v, unable to read env var %v", envVar.Name, envVar.ValueFromEnv)
+					}
 				} else {
-					p.logger.Warnf("environmental variable %v, unable to read file %v, %v", envVar.Name, envVar.ValueFromFile, err)
-				}
-			} else if len(envVar.ValueFromEnv) > 0 {
-				if envValue, exists := os.LookupEnv(envVar.ValueFromEnv); exists {
-					p.logger.Infof("environmental variable %v set from env var %v", envVar.Name, envVar.ValueFromEnv)
-					stringData := string(envValue)
-					env[envVar.Name] = stringData
-				} else {
-					p.logger.Warnf("environmental variable %v, unable to read env var %v", envVar.Name, envVar.ValueFromEnv)
-				}
-			} else {
-				if envValue, exists := os.LookupEnv(envVar.Name); exists {
-					p.logger.Infof("environmental variable %v set", envVar.Name)
-					stringData := string(envValue)
-					env[envVar.Name] = stringData
-				} else {
-					p.logger.Warnf("environmental variable %v does not exist", envVar.Name)
+					if envValue, exists := os.LookupEnv(envVar.Name); exists {
+						p.logger.Infof("environmental variable %v set", envVar.Name)
+						stringData := string(envValue)
+						env[envVar.Name] = stringData
+					} else {
+						p.logger.Warnf("environmental variable %v does not exist", envVar.Name)
+					}
 				}
 			}
 		}
