@@ -323,7 +323,9 @@ func (p *GoGetterPlugin) GoGit(u *url.URL, dir string) error {
 
 		u.RawQuery = q.Encode()
 	}
-
+	if len(ref) == 0 {
+		ref = p.findDefaultBranch(dir)
+	}
 	// Clone or update the repository
 	_, err := os.Stat(dir)
 	if err != nil && !os.IsNotExist(err) {
@@ -477,9 +479,7 @@ func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
 	var stdoutbuf bytes.Buffer
 	var clone = true
 	var update = true
-	if len(ref) == 0 {
-		ref = p.findDefaultBranch(dst)
-	}
+
 	// Check if branch/tag/commit id changed (that order)
 	cmd := exec.Command("git", "symbolic-ref", "--short", "-q", "HEAD")
 	cmd.Dir = dst
