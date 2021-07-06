@@ -65,34 +65,41 @@ func (p *GomsertPlugin) Transform(m resmap.ResMap) error {
 	}
 
 	if p.DataSources != nil {
-
 		for _, envVar := range p.EnvVars {
+			p.logger.Infof("DEBUG %v", envVar)
 			if len(envVar.Value) > 0 {
+				p.logger.Infof("environmental variable %v set from value", envVar.Name)
 				env[envVar.Name] = envVar.Value
 			} else if len(envVar.ValueFromFile) > 0 {
-				if data, err = ioutil.ReadFile(envVar.ValueFromFile); err != nil {
-					return err
+				if data, err = ioutil.ReadFile(envVar.ValueFromFile); err == nil {
+					p.logger.Infof("environmental variable %v set from File %v", envVar.Name, envVar.ValueFromFile)
+					stringData := string(data)
+					env[envVar.Name] = stringData
 				} else {
-					env[envVar.Name] = string(data)
+					p.logger.Warnf("environmental variable %v, unable to read file %v, %v", envVar.Name, envVar.ValueFromFile, err)
 				}
 			} else if len(envVar.ValueFromEnv) > 0 {
-				if envValue, exists := os.LookupEnv(envVar.ValueFromEnv); err != nil || !exists {
-					if err != nil {
-						return err
-					}
-					return fmt.Errorf("environmental variable %v, does not exist", envVar.ValueFromEnv)
+				if envValue, exists := os.LookupEnv(envVar.ValueFromEnv); exists {
+					p.logger.Infof("environmental variable %v set from env var %v", envVar.Name, envVar.ValueFromEnv)
+					stringData := string(envValue)
+					env[envVar.Name] = stringData
 				} else {
-					env[envVar.Name] = string(envValue)
+					p.logger.Warnf("environmental variable %v, unable to read env var %v", envVar.Name, envVar.ValueFromEnv)
 				}
 			} else {
-				if envValue, exists := os.LookupEnv(envVar.Name); err != nil || !exists {
-					if err != nil {
-						return err
-					}
-					return fmt.Errorf("environmental variable %v, does not exist", envVar.Name)
+				if envValue, exists := os.LookupEnv(envVar.Name); exists {
+					p.logger.Infof("environmental variable %v set", envVar.Name)
+					stringData := string(envValue)
+					env[envVar.Name] = stringData
 				} else {
-					env[envVar.Name] = string(envValue)
+					p.logger.Warnf("environmental variable %v does not exist", envVar.Name)
 				}
+			}
+		}
+		// Find Errors
+		for _, envVar := range p.EnvVars {
+			if _, exists := env[envVar.Name]; !exists {
+				return fmt.Errorf("unbound env var %v", envVar.Name)
 			}
 		}
 
