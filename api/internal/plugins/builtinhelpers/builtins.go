@@ -44,6 +44,7 @@ const (
 	GitImageTag
 	GoGetter
 	Yaegi
+	Gomsert
 )
 
 var stringToBuiltinPluginTypeMap map[string]BuiltinPluginType
@@ -95,6 +96,9 @@ func init() {
 	TransformerFactories[Yaegi] = builtins_qlik.NewYaegiTransformerPlugin
 	GeneratorFactories[Yaegi] = builtins_qlik.NewYaegiGeneratorPlugin
 	stringToBuiltinPluginTypeMap["Yaegi"] = Yaegi
+
+	TransformerFactories[Gomsert] = builtins_qlik.NewGomsertPlugin
+	stringToBuiltinPluginTypeMap["Gomsert"] = Gomsert
 }
 
 func makeStringToBuiltinPluginTypeMap() (result map[string]BuiltinPluginType) {
