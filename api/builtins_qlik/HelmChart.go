@@ -484,7 +484,9 @@ func (p *HelmChartPlugin) helmTemplate(settings *cli.EnvSettings, c *chart.Chart
 	if err := actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {}); err != nil {
 		return nil, err
 	}
-
+	if len(p.NewChartVersion) > 0 {
+		c.Metadata.Version = p.NewChartVersion
+	}
 	client := action.NewInstall(actionConfig)
 	client.DryRun = true
 	client.ReleaseName = releaseName
