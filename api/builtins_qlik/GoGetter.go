@@ -45,9 +45,13 @@ var defaultBranchRegexp = regexp.MustCompile(`\s->\sorigin/(.*)`)
 
 // GoGetterPlugin ...
 type GoGetterPlugin struct {
-	types.ObjectMeta    `json:"metadata,omitempty" yaml:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
-	URL                 string   `json:"url,omitempty" yaml:"url,omitempty"`
-	Cwd                 string   `json:"cwd,omitempty" yaml:"cwd,omitempty"`
+	types.ObjectMeta `json:"metadata,omitempty" yaml:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	URL              string `json:"url,omitempty" yaml:"url,omitempty"`
+	Cwd              string `json:"cwd,omitempty" yaml:"cwd,omitempty"`
+	CommonComponents []struct {
+		Name string `json:"name" yaml:"name"`
+		Path string `json:"path" yaml:"path"`
+	} `json:"commonComponents,omitempty" yaml:"commonComponents,omitempty"`
 	PreBuildArgs        []string `json:"preBuildArgs,omitempty" yaml:"preBuildArgs,omitempty"`
 	PreBuildScript      string   `json:"preBuildScript,omitempty" yaml:"preBuildScript,omitempty"`
 	PreBuildScriptFile  string   `json:"preBuildScriptFile,omitempty" yaml:"preBuildScriptFile,omitempty"`
@@ -96,23 +100,41 @@ func (p *GoGetterPlugin) Config(h *resmap.PluginHelpers, c []byte) (err error) {
 
 // Generate ...
 func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
-
-	if len(p.PartialCloneDir) == 0 {
-		p.PartialCloneDir = "manifests"
-	}
-	if len(p.CloneFilter) == 0 {
-		p.CloneFilter = "tree:0"
-	}
-	dir, err := konfig.DefaultAbsPluginHome(filesys.MakeFsOnDisk())
-	if err != nil {
-		dir = filepath.Join(konfig.HomeDir(), konfig.XdgConfigHomeEnvDefault, konfig.ProgramName, konfig.RelPluginHome)
-		p.logger.Infof("No kustomize plugin directory, will create default: %v", dir)
-	}
-
-	repodir := filepath.Join(dir, "qlik", "v1", "repos")
-	dir = filepath.Join(repodir, p.ObjectMeta.Name)
-
 	var nogit bool
+	var dir string
+	var err error
+
+	if dir, nogit = os.LookupEnv("KUZ_COMMON_" + p.ObjectMeta.Name); nogit {
+		_, err := os.Stat(dir)
+		if err != nil {
+			p.logger.Warnf("component %v should of been cloned into %v prior to build, proceeding without", p.ObjectMeta.Name, dir)
+			nogit = false
+		} else {
+			p.logger.Infof("component %v will use %v and not clone/update using git", p.ObjectMeta.Name, dir)
+		}
+	}
+
+	if !nogit {
+		if len(p.PartialCloneDir) == 0 {
+			p.PartialCloneDir = "manifests"
+		}
+		if len(p.CloneFilter) == 0 {
+			p.CloneFilter = "tree:0"
+		}
+		dir, err = konfig.DefaultAbsPluginHome(filesys.MakeFsOnDisk())
+		if err != nil {
+			dir = filepath.Join(konfig.HomeDir(), konfig.XdgConfigHomeEnvDefault, konfig.ProgramName, konfig.RelPluginHome)
+			p.logger.Infof("No kustomize plugin directory, will create default: %v", dir)
+		}
+
+		repodir := filepath.Join(dir, "qlik", "v1", "repos")
+		// Same repo in the same run, used cached
+		if err := os.MkdirAll(repodir, 0777); err != nil {
+			p.logger.Errorf("error creating directory: %v, error: %v", dir, err)
+			return nil, err
+		}
+		dir = filepath.Join(repodir, p.ObjectMeta.Name)
+	}
 	var kustBytes []byte
 	var cacheFileName string
 
@@ -147,21 +169,16 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 			kustBytes, _ = ioutil.ReadFile(cacheFileName)
 		}
 	}
-	// Same repo in the same run, used cached
-	if err := os.MkdirAll(repodir, 0777); err != nil {
-		p.logger.Errorf("error creating directory: %v, error: %v", dir, err)
-		return nil, err
-	}
-	// We usually only fetch a branch at a time
-	p.logger.Infof("Using git reference: %v", p.URL)
-	url, err := url.Parse(p.URL)
-	if err != nil {
-		p.logger.Errorf("Bad git URL %v\n", err)
-		return nil, err
-	}
-	url.Scheme = "https"
 
 	if !nogit {
+		// We usually only fetch a branch at a time
+		p.logger.Infof("Using git reference: %v", p.URL)
+		url, err := url.Parse(p.URL)
+		if err != nil {
+			p.logger.Errorf("Bad git URL %v\n", err)
+			return nil, err
+		}
+		url.Scheme = "https"
 		if err := p.executeGitGetter(url, dir); err != nil {
 			p.logger.Errorf("Error fetching repository: %v\n", err)
 			return nil, err
@@ -242,6 +259,9 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 		envVar := fmt.Sprintf("%d_KUZ_RUN_ID=%s", os.Getpid(), runID)
 		p.logger.Debugf("Setting Cache Var for kustomize run: %v\n", envVar)
 		cmd.Env = append(cmd.Env, envVar)
+		for _, commonComponent := range p.CommonComponents {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("KUZ_COMMON_%s=%s", commonComponent.Name, commonComponent.Path))
+		}
 		err = p.getRunCommand(cmd, &kustomizedYaml)
 		if err != nil {
 			p.logger.Errorf("Error executing kustomize as a child process: %v\n", err)
@@ -436,6 +456,7 @@ func (p *GoGetterPlugin) clone(dst string, u *url.URL, ref string) error {
 
 	if err := p.getRunCommand(exec.Command("git", args...), nil); err != nil {
 		p.logger.Errorf("error executing git clone: %v\n", err)
+		os.RemoveAll(dst)
 		return err
 	}
 
@@ -475,6 +496,7 @@ func (p *GoGetterPlugin) clone(dst string, u *url.URL, ref string) error {
 }
 
 func (p *GoGetterPlugin) update(dst string, u *url.URL, ref string) error {
+
 	// Determin current sitution
 	var stdoutbuf bytes.Buffer
 	var clone = true
