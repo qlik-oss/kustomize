@@ -290,10 +290,6 @@ func (p *GoGetterPlugin) Generate() (resmap.ResMap, error) {
 		i.Use(yamlv3.Symbols)
 		i.Use(gogetter)
 
-		if err != nil {
-			p.logger.Errorf("Go Script Error: %v\n", err)
-			return nil, err
-		}
 		if len(p.PostBuildScript) > 0 {
 			_, err = i.Eval(p.PostBuildScript)
 		} else {
